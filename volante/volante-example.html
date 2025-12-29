@@ -1,0 +1,458 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Volante Mega-Sena - A4 Landscape</title>
+
+  <style>
+    /* =========================
+       A4 LANDSCAPE (tela + print)
+       ========================= */
+    :root{
+      --a4w: 297mm;
+      --a4h: 210mm;
+
+      --dash: #f2a3b0;
+      --ink: #111;
+
+      /* “cartão” à esquerda */
+      --card-left: 10mm;
+      --card-top: 12mm;
+      --card-w: 95mm;
+      --card-h: 186mm;
+
+      /* área onde fica a marcação do jogo (dentro do cartão) */
+      --mark-area-w: 70mm;   /* só visual */
+      --mark-area-h: 85mm;   /* só visual */
+
+      /* ponto preto */
+      --dot: 2.1mm;
+      --dot-radius: 0.45mm;
+
+      /* bordas/typography */
+      --font: Arial, Helvetica, sans-serif;
+    }
+
+    @page{ size: A4 landscape; margin: 0; }
+
+    html, body{
+      width: var(--a4w);
+      height: var(--a4h);
+      margin: 0;
+      padding: 0;
+      background: #e5e7eb;
+      font-family: var(--font);
+      color: var(--ink);
+    }
+
+    .sheet{
+      width: var(--a4w);
+      height: var(--a4h);
+      margin: 10px auto;
+      background:#fff;
+      position: relative;
+      overflow: hidden;
+      box-shadow: 0 10px 35px rgba(0,0,0,.18);
+    }
+
+    @media print{
+      html, body{ background:#fff; }
+      .sheet{ margin:0; box-shadow:none; }
+    }
+
+    /* =========================
+       HEADER / FOOTER
+       ========================= */
+    .topbar{
+      position:absolute;
+      left: 10mm;
+      right: 10mm;
+      top: 8mm;
+      display:flex;
+      justify-content:space-between;
+      font-size: 12px;
+      line-height: 1;
+    }
+    .topbar .center{
+      position:absolute;
+      left:0; right:0;
+      text-align:center;
+      font-size: 13px;
+    }
+
+    .footer{
+      position:absolute;
+      left: 10mm;
+      right: 10mm;
+      bottom: 7mm;
+      display:flex;
+      justify-content:space-between;
+      font-size: 12px;
+    }
+
+    .warning{
+      position:absolute;
+      left: 3mm;
+      top: 120mm;
+      transform: rotate(-90deg);
+      transform-origin:left top;
+      color:#b06a77;
+      font-size: 12px;
+      letter-spacing:.4px;
+      white-space:nowrap;
+    }
+
+    /* =========================
+       CARD (volante à esquerda)
+       ========================= */
+    .card{
+      position:absolute;
+      left: var(--card-left);
+      top: var(--card-top);
+      width: var(--card-w);
+      height: var(--card-h);
+      border: 2px dashed var(--dash);
+      box-sizing:border-box;
+      padding: 7mm 6mm;
+    }
+
+    .brand{
+      text-align:center;
+      font-weight:700;
+      font-size:16px;
+      margin:0;
+    }
+    .code{
+      text-align:center;
+      font-weight:700;
+      font-size: 12px;
+      text-decoration: underline;
+      margin-top: 1mm;
+      letter-spacing: .5px;
+    }
+    .meta{
+      text-align:center;
+      font-size:12px;
+      margin-top: 1.6mm;
+    }
+
+    .games{
+      margin-top: 5mm;
+      font-size: 12px;
+      line-height: 1.35;
+    }
+    .games .line{ margin: 1mm 0; }
+
+    .site{
+      margin-top: 3mm;
+      text-align:center;
+      font-size: 12px;
+      text-decoration: underline;
+    }
+
+    /* =========================
+       AREA: jogos + marcações
+       ========================= */
+    .marks-wrap{
+      margin-top: 6mm;
+      display:flex;
+      gap: 6mm;
+      align-items:flex-start;
+    }
+
+    /* “barcode” lateral (visual) */
+    .bar{
+      display:flex;
+      flex-direction:column;
+      gap: 1.1mm;
+      margin-top: 2mm;
+    }
+    .bar .blk{
+      width: 4.2mm;
+      height: 2.1mm;
+      background:#000;
+      border-radius: .4mm;
+    }
+    .bar .spacer{ height: 3.2mm; }
+
+    /* Bloco de um jogo (marcadores + mapa de 60) */
+    .gameBlock{
+      display:block;
+      width: var(--mark-area-w);
+    }
+
+    /* marcador 6..15 */
+    .pickCount{
+      display:flex;
+      gap: 1.6mm;
+      align-items:center;
+      margin-bottom: 2.2mm;
+      font-size: 11px;
+    }
+    .pickCount .box{
+      width: 6.0mm;
+      height: 5.0mm;
+      border: .35mm solid #000;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      box-sizing:border-box;
+    }
+    .pickCount .box.on{
+      background:#000;
+      color:#fff;
+    }
+
+    /* área de marcação (posicionamento absoluto, SEM torto) */
+    .map60{
+      position: relative;
+      width: var(--mark-area-w);
+      height: var(--mark-area-h);
+      /* borda só pra debug: remova se quiser */
+      /* outline: 1px solid rgba(0,0,0,.08); */
+    }
+
+    /* cada dot é absoluto (x,y vindos do JSON) */
+    .dot{
+      position:absolute;
+      width: var(--dot);
+      height: var(--dot);
+      border-radius: var(--dot-radius);
+      background: transparent;
+    }
+    .dot.on{ background:#000; }
+
+    /* quando o jogo for inválido, não quebra layout */
+    .invalid{
+      font-size: 11px;
+      color:#b00020;
+      margin-bottom: 2mm;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="sheet">
+
+    <div class="topbar">
+      <div id="dt"></div>
+      <div class="center">Impressão de Volantes</div>
+      <div></div>
+    </div>
+
+    <div class="card">
+      <h1 class="brand" id="loteria">Mega-Sena</h1>
+      <div class="code" id="codigo">TEFXJ</div>
+      <div class="meta"><b id="volanteInfo">Volante 1 de 1</b></div>
+      <div class="meta" id="jogosInfo">Jogos 1 a 3</div>
+
+      <div class="games" id="gamesText"></div>
+      <div class="site" id="site">www.lotoloto.com.br</div>
+
+      <div class="marks-wrap">
+        <div class="bar" id="bar"></div>
+
+        <!-- Aqui o JS injeta 1 bloco por jogo -->
+        <div id="gameBlocks"></div>
+      </div>
+    </div>
+
+    <div class="warning">O tracejado não deve aparecer no volante</div>
+
+    <div class="footer">
+      <div>Modelo HTML/CSS/JS (standalone)</div>
+      <div>1/1</div>
+    </div>
+
+  </div>
+
+<script>
+/* =========================================================
+   1) PAYLOAD (você vai trocar / alimentar pela sua camada)
+   ========================================================= */
+const payload = {
+  loteria: "Mega-Sena",
+  codigo: "TEFXJ",
+  site: "www.lotoloto.com.br",
+  volanteAtual: 1,
+  volanteTotal: 1,
+  jogos: [
+    [1, 9, 37, 39, 42, 44],
+    [5, 10, 24, 25, 47, 54],
+    [1, 20, 45, 48, 51, 58, 60]
+  ]
+};
+
+/* =========================================================
+   2) “MAPA COMPLETO” 1..60 EM JSON (número -> x,y)
+   - Aqui é o que elimina o “torto”.
+   - Você pode ajustar originX/originY e stepX/stepY.
+   ========================================================= */
+const MAPA_1A60 = (() => {
+  // Coordenadas base (em px) dentro do container .map60
+  // Ajuste fino aqui se quiser mudar a “grade óptica”.
+  const originX = 6;    // px
+  const originY = 6;    // px
+  const stepX   = 24;   // px (distância horizontal entre colunas)
+  const stepY   = 14;   // px (distância vertical entre linhas)
+
+  // Mega-Sena: 6 linhas x 10 colunas
+  const map = {};
+  let n = 1;
+  for (let r = 0; r < 6; r++){
+    for (let c = 0; c < 10; c++){
+      map[n] = { x: originX + c * stepX, y: originY + r * stepY };
+      n++;
+    }
+  }
+  return map;
+})();
+
+/* =========================================================
+   3) Helpers
+   ========================================================= */
+const pad2 = (n) => String(n).padStart(2, "0");
+
+function nowPtBR(){
+  return new Date().toLocaleString("pt-BR");
+}
+
+function normalizeGame(arr){
+  const clean = Array.from(new Set(arr.map(Number))).filter(n => Number.isFinite(n));
+  clean.sort((a,b) => a-b);
+  return clean;
+}
+
+function isValidGame(dezenas){
+  if (dezenas.length < 6 || dezenas.length > 15) return false;
+  for (const n of dezenas){
+    if (n < 1 || n > 60) return false;
+  }
+  return true;
+}
+
+/* =========================================================
+   4) Render UI fixo
+   ========================================================= */
+document.getElementById("dt").textContent = nowPtBR();
+document.getElementById("loteria").textContent = payload.loteria;
+document.getElementById("codigo").textContent  = payload.codigo;
+document.getElementById("site").textContent    = payload.site;
+document.getElementById("volanteInfo").textContent =
+  `Volante ${payload.volanteAtual} de ${payload.volanteTotal}`;
+document.getElementById("jogosInfo").textContent =
+  `Jogos 1 a ${payload.jogos.length}`;
+
+// texto dos jogos
+const gamesText = document.getElementById("gamesText");
+gamesText.innerHTML = "";
+payload.jogos.forEach((j, i) => {
+  const dezenas = normalizeGame(j);
+  const line = document.createElement("div");
+  line.className = "line";
+  line.textContent = `Jogo ${i+1}: ${dezenas.map(pad2).join(", ")}`;
+  gamesText.appendChild(line);
+});
+
+// barcode visual
+const bar = document.getElementById("bar");
+bar.innerHTML = "";
+for (let i=0; i<32; i++){
+  const blk = document.createElement("div");
+  blk.className = "blk";
+  bar.appendChild(blk);
+  if (i === 10 || i === 21){
+    const sp = document.createElement("div");
+    sp.className = "spacer";
+    bar.appendChild(sp);
+  }
+}
+
+/* =========================================================
+   5) Builder: bloco de jogo reutilizável
+   - marcador 6..15
+   - dots 1..60 com mapa JSON
+   ========================================================= */
+function createGameBlock(gameIndex, dezenas){
+  const block = document.createElement("div");
+  block.className = "gameBlock";
+
+  // validação
+  const valid = isValidGame(dezenas);
+  if (!valid){
+    const inv = document.createElement("div");
+    inv.className = "invalid";
+    inv.textContent = `Jogo ${gameIndex+1} inválido (6..15 dezenas, 1..60, sem repetição).`;
+    block.appendChild(inv);
+  }
+
+  // marcador 6..15
+  const pick = document.createElement("div");
+  pick.className = "pickCount";
+  for (let k=6; k<=15; k++){
+    const box = document.createElement("div");
+    box.className = "box" + (k === dezenas.length ? " on" : "");
+    box.textContent = k;
+    pick.appendChild(box);
+  }
+  block.appendChild(pick);
+
+  // mapa 60 (dots)
+  const map = document.createElement("div");
+  map.className = "map60";
+
+  // cria dots (1..60) com posições absolutas
+  for (let n=1; n<=60; n++){
+    const pos = MAPA_1A60[n];
+    const dot = document.createElement("div");
+    dot.className = "dot";
+    dot.dataset.num = String(n);
+
+    // posições do JSON
+    dot.style.left = pos.x + "px";
+    dot.style.top  = pos.y + "px";
+
+    map.appendChild(dot);
+  }
+
+  // pinta dezenas (se inválido, não pinta — mas mantém layout)
+  if (valid){
+    const set = new Set(dezenas);
+    map.querySelectorAll(".dot").forEach(dot => {
+      const n = Number(dot.dataset.num);
+      if (set.has(n)) dot.classList.add("on");
+    });
+  }
+
+  block.appendChild(map);
+  return block;
+}
+
+/* =========================================================
+   6) Render jogos
+   ========================================================= */
+const gameBlocks = document.getElementById("gameBlocks");
+gameBlocks.innerHTML = "";
+
+payload.jogos.forEach((j, idx) => {
+  const dezenas = normalizeGame(j);
+  gameBlocks.appendChild(createGameBlock(idx, dezenas));
+});
+
+/* =========================================================
+   7) API REUTILIZÁVEL (pra sua camada chamar)
+   ========================================================= */
+window.Volante = {
+  setPayload(newPayload){
+    // você pode reaproveitar: atualiza o payload e recarrega
+    // (aqui deixei simples: apenas recarrega a página pra manter o HTML limpo)
+    console.warn("Implemente sua camada: substitua payload e chame location.reload()");
+  },
+  getMap(){
+    return MAPA_1A60; // JSON completo
+  }
+};
+</script>
+</body>
+</html>
