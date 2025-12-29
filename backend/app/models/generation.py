@@ -15,13 +15,13 @@ class StatisticalWeightPreference(str, Enum):
 
 class GameConstraints(BaseModel):
     """Game generation constraints"""
-    numbers_per_game: int = Field(6, ge=6, le=15, description="Numbers per game (6-15)")
+    numbers_per_game: int = Field(6, ge=6, le=17, description="Numbers per game (6-17)")
     min_repetition: Optional[int] = Field(None, ge=0, description="Minimum repetition across games")
     max_repetition: Optional[int] = Field(None, ge=0, description="Maximum repetition across games")
-    min_odd: Optional[int] = Field(None, ge=0, le=15, description="Minimum odd numbers per game")
-    max_odd: Optional[int] = Field(None, ge=0, le=15, description="Maximum odd numbers per game")
-    min_even: Optional[int] = Field(None, ge=0, le=15, description="Minimum even numbers per game")
-    max_even: Optional[int] = Field(None, ge=0, le=15, description="Maximum even numbers per game")
+    min_odd: Optional[int] = Field(None, ge=0, le=17, description="Minimum odd numbers per game")
+    max_odd: Optional[int] = Field(None, ge=0, le=17, description="Maximum odd numbers per game")
+    min_even: Optional[int] = Field(None, ge=0, le=17, description="Minimum even numbers per game")
+    max_even: Optional[int] = Field(None, ge=0, le=17, description="Maximum even numbers per game")
     fixed_numbers: Optional[List[int]] = Field(None, description="Numbers that must appear in all games")
     seed: Optional[int] = Field(None, description="Random seed for reproducibility")
     
@@ -56,7 +56,7 @@ class GenerationRequest(BaseModel):
     """Generation request model"""
     mode: GenerationMode = Field(..., description="Generation mode: by_budget or by_quantity")
     budget: Optional[float] = Field(None, gt=0, description="Budget in BRL (required if mode is by_budget)")
-    quantity: Optional[int] = Field(None, gt=0, le=1000, description="Number of games to generate (required if mode is by_quantity)")
+    quantity: Optional[int] = Field(None, gt=0, le=10_000_000, description="Número de jogos a gerar (obrigatório se modo for by_quantity)")
     constraints: GameConstraints = Field(..., description="Game generation constraints")
     
     @field_validator('budget')

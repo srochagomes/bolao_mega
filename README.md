@@ -33,7 +33,7 @@ A production-grade lottery number generation system that uses historical data an
 - ✅ In-memory processing (no database)
 - ✅ PDF/HTML ticket generation for lottery machines
 - ✅ File checking against drawn numbers
-- ✅ Dynamic pricing based on number of dezenas (6-15)
+- ✅ Dynamic pricing based on number of dezenas (6-17)
 
 ## Prerequisites
 
@@ -101,7 +101,7 @@ npm run build && npm start  # Production mode
 2. Fill in the generation parameters:
    - **Mode**: By Budget or By Quantity
    - **Budget** (BRL) or **Quantity** of games
-   - **Numbers per game** (6-15 dezenas)
+   - **Numbers per game** (6-17 dezenas)
    - **Max Repetition** (optional): Maximum repeated numbers between games
    - **Fixed Numbers** (optional): Numbers that must appear in all games
 3. Click "Generate Games"
@@ -139,21 +139,23 @@ Backend configuration is in `backend/app/core/config.py`:
 - `JOB_TTL_SECONDS`: Job expiration time (default: 1800s / 30min)
 - `MAX_GAMES_PER_REQUEST`: Maximum games per request (default: 1000)
 - `MAX_PROCESSING_TIME_SECONDS`: Maximum processing time per job (default: 300s / 5min)
-- `MEGA_SENA_PRICES`: Dictionary with prices for 6-15 dezenas
+- `MEGA_SENA_PRICES`: Dictionary with prices for 6-17 dezenas
 
 ## Pricing
 
 The system uses official Mega-Sena pricing:
-- 6 dezenas: R$ 5.00
-- 7 dezenas: R$ 35.00
-- 8 dezenas: R$ 140.00
-- 9 dezenas: R$ 420.00
-- 10 dezenas: R$ 1,050.00
-- 11 dezenas: R$ 2,310.00
-- 12 dezenas: R$ 4,620.00
-- 13 dezenas: R$ 8,580.00
-- 14 dezenas: R$ 15,015.00
-- 15 dezenas: R$ 25,025.00
+- 6 dezenas: R$ 6,00
+- 7 dezenas: R$ 42,00
+- 8 dezenas: R$ 168,00
+- 9 dezenas: R$ 504,00
+- 10 dezenas: R$ 1.260,00
+- 11 dezenas: R$ 2.772,00
+- 12 dezenas: R$ 5.544,00
+- 13 dezenas: R$ 10.296,00
+- 14 dezenas: R$ 18.018,00
+- 15 dezenas: R$ 30.030,00
+- 16 dezenas: R$ 48.048,00
+- 17 dezenas: R$ 74.256,00
 
 ## Project Structure
 

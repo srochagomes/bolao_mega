@@ -5,7 +5,7 @@ Internal use only - not exposed to users
 import httpx
 import pandas as pd
 import numpy as np
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Set, Tuple
 from datetime import datetime, timedelta
 import logging
 from app.core.config import settings
@@ -20,6 +20,9 @@ class HistoricalDataService:
         self._data: Optional[pd.DataFrame] = None
         self._last_update: Optional[datetime] = None
         self._cache_ttl = timedelta(seconds=settings.HISTORICAL_DATA_CACHE_TTL)
+        # Performance caches - built when data is loaded
+        self._historical_games_set: Optional[Set[Tuple[int, ...]]] = None
+        self._historical_games_list: Optional[List[Set[int]]] = None  # For quina checks
     
     async def load_data(self, force_refresh: bool = False) -> pd.DataFrame:
         """
@@ -28,6 +31,9 @@ class HistoricalDataService:
         if not force_refresh and self._data is not None:
             if self._last_update and datetime.now() - self._last_update < self._cache_ttl:
                 logger.info("Using cached historical data")
+                # Ensure caches are built even if data was already loaded
+                if self._historical_games_set is None:
+                    self._build_caches()
                 return self._data
         
         logger.info("Loading historical Mega-Sena data...")
@@ -41,6 +47,8 @@ class HistoricalDataService:
                 self._data = self._generate_sample_data()
                 self._last_update = datetime.now()
                 logger.info(f"Loaded {len(self._data)} historical draws")
+                # Build performance caches
+                self._build_caches()
                 return self._data
         except Exception as e:
             logger.error(f"Error loading historical data: {e}")
@@ -48,6 +56,8 @@ class HistoricalDataService:
             if self._data is None:
                 self._data = self._generate_sample_data()
                 self._last_update = datetime.now()
+                # Build performance caches
+                self._build_caches()
             return self._data
     
     def _generate_sample_data(self) -> pd.DataFrame:
@@ -125,6 +135,113 @@ class HistoricalDataService:
     def get_last_update_date(self) -> Optional[datetime]:
         """Get the last update timestamp"""
         return self._last_update
+    
+    def _build_caches(self):
+        """Build performance caches for fast lookups"""
+        if self._data is None or len(self._data) == 0:
+            self._historical_games_set = set()
+            self._historical_games_list = []
+            return
+        
+        logger.info("Building performance caches for historical data...")
+        
+        # Cache 1: Set of all historical games (for O(1) duplicate check)
+        self._historical_games_set = set()
+        # Cache 2: List of sets (for fast quina check)
+        self._historical_games_list = []
+        
+        for _, row in self._data.iterrows():
+            historical_game = sorted([
+                int(row['number_1']),
+                int(row['number_2']),
+                int(row['number_3']),
+                int(row['number_4']),
+                int(row['number_5']),
+                int(row['number_6']),
+            ])
+            # Add tuple to set for O(1) lookup
+            self._historical_games_set.add(tuple(historical_game))
+            # Add set for quina matching
+            self._historical_games_list.append(set(historical_game))
+        
+        logger.info(f"Built caches: {len(self._historical_games_set)} games, {len(self._historical_games_list)} sets")
+    
+    def get_all_historical_games(self) -> List[List[int]]:
+        """
+        Get all historical games (sorted lists of numbers)
+        Returns a list of all games that were drawn historically
+        """
+        if self._data is None or len(self._data) == 0:
+            return []
+        
+        games = []
+        for _, row in self._data.iterrows():
+            game = sorted([
+                int(row['number_1']),
+                int(row['number_2']),
+                int(row['number_3']),
+                int(row['number_4']),
+                int(row['number_5']),
+                int(row['number_6']),
+            ])
+            games.append(game)
+        
+        return games
+    
+    def is_game_drawn(self, game: List[int]) -> bool:
+        """
+        Check if a game (set of numbers) was already drawn in historical data
+        Optimized with cache for O(1) lookup
+        Args:
+            game: Sorted list of numbers (must be exactly 6 numbers)
+        Returns:
+            True if this exact game was drawn before, False if not or if data not available
+        """
+        if len(game) != 6:
+            return False
+        
+        # Build cache if not exists
+        if self._historical_games_set is None:
+            self._build_caches()
+        
+        if self._historical_games_set is None or len(self._historical_games_set) == 0:
+            return False
+        
+        # O(1) lookup using cached set
+        game_tuple = tuple(game)
+        return game_tuple in self._historical_games_set
+    
+    def has_quina_match(self, game: List[int]) -> bool:
+        """
+        Check if a game has 5 numbers matching any historical draw (quina)
+        Optimized with cache for faster lookup
+        Args:
+            game: Sorted list of numbers (must be exactly 6 numbers)
+        Returns:
+            True if this game has exactly 5 numbers in common with any historical draw
+        """
+        if len(game) != 6:
+            return False
+        
+        # Build cache if not exists
+        if self._historical_games_list is None:
+            self._build_caches()
+        
+        if self._historical_games_list is None or len(self._historical_games_list) == 0:
+            return False
+        
+        game_set = set(game)
+        
+        # Use cached list of sets (much faster than iterating DataFrame)
+        for historical_set in self._historical_games_list:
+            # Count matches
+            matches = len(game_set & historical_set)
+            
+            # If exactly 5 matches, this is a quina
+            if matches == 5:
+                return True
+        
+        return False
 
 
 # Global instance

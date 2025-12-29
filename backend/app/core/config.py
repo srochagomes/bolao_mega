@@ -18,8 +18,8 @@ class Settings(BaseSettings):
     # Job Processing
     MAX_CONCURRENT_JOBS: int = 3
     JOB_TTL_SECONDS: int = 1800  # 30 minutes
-    MAX_GAMES_PER_REQUEST: int = 1000
-    MAX_PROCESSING_TIME_SECONDS: int = 300  # 5 minutes
+    MAX_GAMES_PER_REQUEST: int = 10_000_000  # 10 milhões de jogos (usando streaming)
+    MAX_PROCESSING_TIME_SECONDS: int = 3600  # 60 minutes (aumentado para grandes volumes)
     
     # Rate Limiting
     RATE_LIMIT_PER_MINUTE: int = 10
@@ -28,24 +28,26 @@ class Settings(BaseSettings):
     MEGA_SENA_MIN_NUMBER: int = 1
     MEGA_SENA_MAX_NUMBER: int = 60
     MEGA_SENA_NUMBERS_PER_GAME: int = 6
-    MEGA_SENA_GAME_PRICE: float = 5.00  # BRL (deprecated - use get_game_price function)
+    MEGA_SENA_GAME_PRICE: float = 6.00  # BRL (deprecated - use get_game_price function)
     
     @staticmethod
     def get_game_price(numbers_per_game: int) -> float:
         """Get Mega-Sena game price based on numbers per game"""
         prices = {
-            6: 5.00,
-            7: 35.00,
-            8: 140.00,
-            9: 420.00,
-            10: 1050.00,
-            11: 2310.00,
-            12: 4620.00,
-            13: 8580.00,
-            14: 15015.00,
-            15: 25025.00,
+            6: 6.00,
+            7: 42.00,
+            8: 168.00,
+            9: 504.00,
+            10: 1260.00,
+            11: 2772.00,
+            12: 5544.00,
+            13: 10296.00,
+            14: 18018.00,
+            15: 30030.00,
+            16: 48048.00,
+            17: 74256.00,
         }
-        return prices.get(numbers_per_game, 5.00)
+        return prices.get(numbers_per_game, 6.00)
     
     # Historical Data
     HISTORICAL_DATA_URL: str = "https://asloterias.com.br/download-loterias/megasena"

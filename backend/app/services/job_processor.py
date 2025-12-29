@@ -13,6 +13,7 @@ from app.models.generation import GenerationRequest
 from app.services.generator import GenerationEngine
 from app.services.excel_generator import ExcelGenerator
 from app.services.statistics import statistics_service
+from app.services.historical_data import historical_data_service
 from app.services.file_manager import file_manager
 from app.core.config import settings
 
@@ -73,28 +74,54 @@ class JobProcessor:
             
             logger.info(f"Processing job {process_id}: quantity={request.quantity}, numbers_per_game={request.constraints.numbers_per_game}, fixed_numbers={len(request.constraints.fixed_numbers) if request.constraints.fixed_numbers else 0}")
             
-            # Ensure statistics service is initialized
+            # Ensure statistics service and historical data are initialized
             logger.info(f"Initializing statistics service for job {process_id}")
             await statistics_service.initialize()
-            logger.info(f"Statistics service initialized for job {process_id}")
+            # Also ensure historical data is loaded (needed for duplicate/quina checks)
+            await historical_data_service.load_data()
+            logger.info(f"Statistics service and historical data initialized for job {process_id}")
             
             # Generate games in executor with timeout
             job_info.progress = 0.3
             logger.info(f"Starting game generation for job {process_id}: {request.quantity} games")
             
             try:
-                # Run generation in thread pool with timeout
                 loop = asyncio.get_event_loop()
-                games = await asyncio.wait_for(
-                    loop.run_in_executor(
-                        self._executor,
-                        self._generator.generate_games,
-                        request.quantity,
-                        request.constraints
-                    ),
-                    timeout=self._max_processing_time
-                )
-                logger.info(f"Game generation completed for job {process_id}: {len(games)} games generated")
+                
+                # Always use streaming for quantities > 1000 to ensure memory efficiency
+                # For very large quantities (millions), streaming is essential
+                use_streaming = request.quantity > 1000
+                
+                if use_streaming:
+                    logger.info(f"Using streaming mode for {request.quantity} games (memory efficient)")
+                    # Create generator in executor - it will be consumed during Excel generation
+                    def create_games_iterator():
+                        return self._generator.generate_games_streaming(
+                            request.quantity,
+                            request.constraints
+                        )
+                    
+                    games = await asyncio.wait_for(
+                        loop.run_in_executor(
+                            self._executor,
+                            create_games_iterator
+                        ),
+                        timeout=self._max_processing_time
+                    )
+                    # games is now an iterator that will be consumed during Excel generation
+                else:
+                    # Traditional approach for smaller quantities
+                    games = await asyncio.wait_for(
+                        loop.run_in_executor(
+                            self._executor,
+                            self._generator.generate_games,
+                            request.quantity,
+                            request.constraints
+                        ),
+                        timeout=self._max_processing_time
+                    )
+                    logger.info(f"Game generation completed for job {process_id}: {len(games)} games generated")
+                
             except asyncio.TimeoutError:
                 error_msg = f"Geração de jogos excedeu o tempo limite de {self._max_processing_time} segundos. Tente reduzir a quantidade de jogos ou ajustar os números fixos."
                 logger.error(f"Timeout in game generation for job {process_id}: {error_msg}")
@@ -103,7 +130,7 @@ class JobProcessor:
             job_info.progress = 0.7
             logger.info(f"Generating Excel file for job {process_id}")
             
-            # Generate Excel in executor
+            # Generate Excel in executor (handles both list and iterator)
             excel_bytes = await loop.run_in_executor(
                 self._executor,
                 self._excel_gen.generate_excel,
@@ -118,11 +145,13 @@ class JobProcessor:
             self._job_results[process_id] = excel_bytes
             
             # Save to disk with metadata
+            # Get total games count (for list) or use quantity (for iterator)
+            total_games = len(games) if isinstance(games, list) else request.quantity
             metadata = {
                 "budget": request.budget,
                 "quantity": request.quantity,
                 "numbers_per_game": request.constraints.numbers_per_game,
-                "total_games": len(games),
+                "total_games": total_games,
             }
             file_manager.save_file(process_id, excel_bytes, metadata)
             

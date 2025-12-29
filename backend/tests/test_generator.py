@@ -4,6 +4,9 @@ Unit tests for game generator
 import pytest
 import numpy as np
 from app.services.generator import GenerationEngine
+from app.services.game_scorer import GameScorer
+from app.services.game_validator import GameValidator
+from app.services.validation_level import ValidationLevel
 from app.models.generation import GameConstraints
 
 
@@ -70,7 +73,8 @@ class TestGeneratorWithFixedNumbers:
     
     def test_validation_with_fixed_numbers(self):
         """Test that validation accepts games with fixed numbers"""
-        engine = GenerationEngine()
+        validator = GameValidator()
+        scorer = GameScorer()
         
         fixed_numbers = [1, 3, 4, 5, 7, 8, 9, 10, 11, 12, 13, 15, 16, 17, 18, 21, 23, 24, 25, 26, 27, 29, 30, 33, 34, 35, 37, 39, 42, 43, 44, 45, 46, 47, 49, 50, 51, 52, 53, 55, 56, 57, 58, 59, 60]
         
@@ -81,16 +85,19 @@ class TestGeneratorWithFixedNumbers:
         
         # Test a valid game
         valid_game = [1, 3, 7, 11, 23, 42]
-        is_valid, score = engine._validate_and_score_game(valid_game, constraints)
+        is_valid_basic = validator.validate_basic(valid_game, constraints, ValidationLevel.STRICT)
+        is_valid, score = scorer.score_game(valid_game, constraints, ValidationLevel.STRICT)
         
-        assert is_valid, "Valid game with fixed numbers should pass validation"
+        assert is_valid_basic, "Valid game with fixed numbers should pass basic validation"
+        assert is_valid, "Valid game with fixed numbers should pass scoring"
         assert score > 0, "Valid game should have positive score"
         
         # Test an invalid game (uses numbers not in fixed set)
         invalid_game = [1, 2, 3, 4, 5, 6]  # 2 and 6 are not in fixed_numbers
-        is_valid, score = engine._validate_and_score_game(invalid_game, constraints)
+        is_valid_basic = validator.validate_basic(invalid_game, constraints, ValidationLevel.STRICT)
+        is_valid, score = scorer.score_game(invalid_game, constraints, ValidationLevel.STRICT)
         
-        assert not is_valid, "Invalid game (numbers not in fixed set) should fail validation"
+        assert not is_valid_basic, "Invalid game (numbers not in fixed set) should fail basic validation"
     
     def test_generate_stops_on_too_many_failures(self):
         """Test that generation stops after too many consecutive failures"""
