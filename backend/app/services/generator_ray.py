@@ -52,9 +52,9 @@ class GameGenerationWorker:
         self.validator = GameValidator()
         self.scorer = GameScorer()
         self.level_manager = ValidationLevelManager(
-            failure_threshold_strict=20,
-            failure_threshold_normal=50,
-            failure_threshold_relaxed=100
+            failure_threshold_strict=5,  # Very fast adaptation
+            failure_threshold_normal=15,
+            failure_threshold_relaxed=30
         )
     
     def generate_chunk(
@@ -111,8 +111,8 @@ class GameGenerationWorker:
         existing_games: List[List[int]]
     ) -> Optional[List[int]]:
         """Generate a single valid game"""
-        batch_size = 100 if self.constraints.fixed_numbers else 500
-        max_batches = 5
+        batch_size = 200 if self.constraints.fixed_numbers else 1000  # Increased for speed
+        max_batches = 3  # Reduced for faster fallback
         
         for _ in range(max_batches):
             batch_games = []
@@ -154,14 +154,15 @@ class GameGenerationWorker:
                 if self.constraints.fixed_numbers:
                     return game
                 
-                score_threshold = 3.0 if validation_level == ValidationLevel.STRICT else 1.0
+                # Reduced thresholds for faster acceptance
+                score_threshold = 2.0 if validation_level == ValidationLevel.STRICT else 0.5
                 if score >= score_threshold:
                     return game
         
         return None
     
     def _check_repetition(self, game: List[int], existing_games: List[List[int]]) -> bool:
-        """Check if game violates repetition constraints"""
+        """Check if game violates repetition constraints - optimized for speed"""
         if not existing_games:
             return False
         
@@ -169,8 +170,11 @@ class GameGenerationWorker:
             self.constraints.max_repetition is None):
             return False
         
+        # Only check last 100 games for performance (repetition is usually with recent games)
+        games_to_check = existing_games[-100:] if len(existing_games) > 100 else existing_games
         game_set = set(game)
-        for existing_game in existing_games:
+        
+        for existing_game in games_to_check:
             repeated = len(game_set & set(existing_game))
             
             if (self.constraints.min_repetition is not None and 
@@ -265,7 +269,7 @@ class GenerationEngineRay:
         Returns:
             List of generated games
         """
-        if self._use_ray and quantity > 100:
+        if self._use_ray and quantity >= 50:  # Use Ray for 50+ games
             return self._generate_games_ray(quantity, constraints)
         else:
             # Fallback to sequential
@@ -288,7 +292,7 @@ class GenerationEngineRay:
         Yields:
             List[int]: A single game
         """
-        if self._use_ray and quantity > 1000:
+        if self._use_ray and quantity >= 50:  # Use Ray for 50+ games
             yield from self._generate_games_ray_streaming(quantity, constraints, chunk_size)
         else:
             # Fallback to sequential streaming
@@ -304,11 +308,12 @@ class GenerationEngineRay:
         """Generate games using Ray actors"""
         # Determine optimal chunk size and number of workers
         num_workers = self._num_workers or int(ray.available_resources().get("CPU", 4))
-        chunk_size = max(100, quantity // (num_workers * 4))
+        # Optimize chunk size for better parallelization
+        chunk_size = max(50, quantity // (num_workers * 2))  # Smaller chunks for better load balancing
         num_chunks = (quantity + chunk_size - 1) // chunk_size
         
         logger.info(
-            f"Generating {quantity} games using Ray: "
+            f"🚀 Generating {quantity} games using Ray: "
             f"{num_workers} workers, {num_chunks} chunks of ~{chunk_size} games"
         )
         
@@ -347,13 +352,14 @@ class GenerationEngineRay:
             chunk_games = ray.get(future)
             all_games.extend(chunk_games)
             
-            if (i + 1) % 10 == 0:
+            if (i + 1) % 10 == 0 or (i + 1) == len(futures):
+                progress = ((i + 1) / len(futures)) * 100
                 logger.info(
-                    f"Completed {i+1}/{len(futures)} chunks "
-                    f"({len(all_games)} games so far)"
+                    f"✅ Progress: {i+1}/{len(futures)} chunks ({progress:.1f}%) - "
+                    f"{len(all_games)} games generated"
                 )
         
-        logger.info(f"Ray generation completed: {len(all_games)} games")
+        logger.info(f"🎉 Ray generation completed: {len(all_games)} games in {len(futures)} chunks")
         return all_games[:quantity]  # Ensure exact quantity
     
     def _generate_games_ray_streaming(

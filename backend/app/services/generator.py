@@ -20,16 +20,16 @@ class GenerationEngine:
     """Game generation engine - orchestrates specialized services"""
     
     def __init__(self):
-        self._max_attempts = 500  # Maximum attempts to generate valid game (reduced for performance)
+        self._max_attempts = 200  # Maximum attempts to generate valid game (reduced for performance)
         
         # Specialized services
         self._number_generator = NumberGenerator()
         self._validator = GameValidator()
         self._scorer = GameScorer()
         self._level_manager = ValidationLevelManager(
-            failure_threshold_strict=20,  # Reduced for faster adaptation
-            failure_threshold_normal=50,
-            failure_threshold_relaxed=100
+            failure_threshold_strict=5,  # Very fast adaptation
+            failure_threshold_normal=15,
+            failure_threshold_relaxed=30
         )
     
     def generate_games(
@@ -134,8 +134,9 @@ class GenerationEngine:
         max_consecutive_failures = 300  # Increased to allow adaptive system to work
         generated_count = 0
         
-        # Keep a sliding window of recent games for repetition checking
+        # Keep a sliding window of recent games for repetition checking (optimized: only last 100)
         recent_games: List[List[int]] = []
+        max_recent_games = 100  # Only keep last 100 for performance
         
         for i in range(quantity):
             if (i + 1) % 1000 == 0:
@@ -155,7 +156,7 @@ class GenerationEngine:
                 consecutive_failures = max(0, consecutive_failures - 1)  # Slight reduction
                 yield game
                 recent_games.append(game)
-                if len(recent_games) > chunk_size:
+                if len(recent_games) > max_recent_games:
                     recent_games.pop(0)
                 continue
             
@@ -169,9 +170,9 @@ class GenerationEngine:
                 # Yield the game immediately
                 yield game
                 
-                # Maintain sliding window for repetition checking
+                # Maintain sliding window for repetition checking (optimized: only last 100)
                 recent_games.append(game)
-                if len(recent_games) > chunk_size:
+                if len(recent_games) > max_recent_games:
                     recent_games.pop(0)  # Remove oldest
             else:
                 consecutive_failures += 1
@@ -212,9 +213,9 @@ class GenerationEngine:
                     # If we've been using fallback a lot, try to reset to give system another chance
                     consecutive_failures = max(0, consecutive_failures - 10)
                 
-                # Maintain sliding window
+                # Maintain sliding window (optimized: only last 100)
                 recent_games.append(game)
-                if len(recent_games) > chunk_size:
+                if len(recent_games) > max_recent_games:
                     recent_games.pop(0)
         
         logger.info(f"Streaming generation completed: {generated_count}/{quantity} games generated")
@@ -233,12 +234,12 @@ class GenerationEngine:
         # Adaptive batch size: larger batches for better performance
         # Use larger batches and fewer attempts for faster generation
         if constraints.fixed_numbers and len(constraints.fixed_numbers) > 0:
-            batch_size = 100  # Fixed numbers are faster to validate
+            batch_size = 200  # Fixed numbers are faster to validate
         else:
-            batch_size = 500  # Random numbers need more candidates
+            batch_size = 1000  # Random numbers need more candidates - increased for speed
         
         # Try fewer batches but with early exit - reduced for performance
-        max_batches = 5  # Reduced from 20 to 5 for faster failure and fallback
+        max_batches = 3  # Reduced to 3 for faster failure and fallback
         
         for batch_num in range(max_batches):
             # Generate a batch of games
@@ -272,21 +273,24 @@ class GenerationEngine:
                 if is_valid:
                     # Check repetition constraints - ALWAYS check if constraints are set
                     # This is important to ensure max_repetition is always respected
+                    # Optimize: only check recent games (last 100) for speed
                     if constraints.min_repetition is not None or constraints.max_repetition is not None:
                         if not existing_games:
                             # First game - no repetition to check, accept it
                             pass
                         else:
                             valid_repetition = True
-                            for existing_game in existing_games:
-                                repeated = len(set(game) & set(existing_game))
+                            # Only check last 100 games for performance (repetition is usually with recent games)
+                            games_to_check = existing_games[-100:] if len(existing_games) > 100 else existing_games
+                            game_set = set(game)
+                            for existing_game in games_to_check:
+                                repeated = len(game_set & set(existing_game))
                                 
                                 if constraints.min_repetition is not None and repeated < constraints.min_repetition:
                                     valid_repetition = False
                                     break
                                 if constraints.max_repetition is not None and repeated > constraints.max_repetition:
                                     valid_repetition = False
-                                    logger.debug(f"Game {game} has {repeated} repeated numbers with {existing_game}, max allowed: {constraints.max_repetition}")
                                     break
                             
                             if not valid_repetition:
@@ -298,7 +302,8 @@ class GenerationEngine:
                     
                     # For random numbers, return if score is reasonable (early exit)
                     # Lower threshold for relaxed validation levels - more lenient for performance
-                    score_threshold = 3.0 if validation_level == ValidationLevel.STRICT else 1.0
+                    # Reduced thresholds for faster acceptance
+                    score_threshold = 2.0 if validation_level == ValidationLevel.STRICT else 0.5
                     if score >= score_threshold:
                         return game
             

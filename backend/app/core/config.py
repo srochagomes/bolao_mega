@@ -23,7 +23,7 @@ class Settings(BaseSettings):
     
     # Ray Configuration
     USE_RAY: bool = True  # Use Ray for distributed processing if available
-    RAY_MIN_QUANTITY: int = 100  # Use Ray only for quantities >= this value
+    RAY_MIN_QUANTITY: int = 50  # Use Ray only for quantities >= this value (reduced for better performance)
     RAY_NUM_WORKERS: Optional[int] = None  # None = use all available CPUs
     
     # Rate Limiting

@@ -123,9 +123,9 @@ class JobProcessor:
                 use_streaming = request.quantity > 1000
                 
                 if use_streaming:
+                    mode = "🚀 Ray (distributed)" if use_ray else "⚡ Sequential"
                     logger.info(
-                        f"Using streaming mode for {request.quantity} games "
-                        f"({'with Ray' if use_ray else 'sequential'})"
+                        f"📊 Using streaming mode for {request.quantity} games ({mode})"
                     )
                     
                     # Create generator - Ray or sequential
@@ -151,6 +151,11 @@ class JobProcessor:
                     # games is now an iterator that will be consumed during Excel generation
                 else:
                     # Traditional approach for smaller quantities
+                    mode = "🚀 Ray (distributed)" if use_ray else "⚡ Sequential"
+                    logger.info(
+                        f"📊 Generating {request.quantity} games ({mode})"
+                    )
+                    
                     def generate_games():
                         if use_ray and self._ray_generator:
                             return self._ray_generator.generate_games(
