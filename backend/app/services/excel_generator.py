@@ -204,6 +204,12 @@ class ExcelGenerator:
         # Games data
         manual_set = set(manual_numbers) if manual_numbers else set()
         
+        # Determinar se usar formatação condicional (desabilitar para volumes maiores)
+        use_conditional_formatting = len(sorted_games) <= 1000
+        start_data_row = 4
+        end_data_row = start_data_row + len(sorted_games) - 1
+        
+        # Escrever dados primeiro
         for row_idx, game in enumerate(sorted_games, start=4):
             # Check for matches
             matches = manual_set & set(game) if manual_set else set()
@@ -214,18 +220,7 @@ class ExcelGenerator:
                 cell.border = self._border
                 cell.alignment = Alignment(horizontal='center', vertical='center')
                 
-                # Adicionar formatação condicional para destacar números correspondentes em verde
-                # Fórmula verifica se o número existe na aba Entrada Manual
-                col_letter = get_column_letter(col_idx)
-                # Excel requer que nomes de abas com espaços sejam envolvidos em aspas simples
-                fill_rule = FormulaRule(
-                    formula=[f"COUNTIF('Entrada Manual'!$A$6:$F$6,{col_letter}{row_idx})>0"],
-                    fill=self._green_fill,
-                    font=Font(bold=True)
-                )
-                ws.conditional_formatting.add(f'{col_letter}{row_idx}', fill_rule)
-                
-                # Destaque inicial se corresponde à entrada manual (para valores pré-preenchidos)
+                # Destaque direto se corresponde à entrada manual (mais eficiente)
                 if number in matches:
                     cell.fill = self._match_fill
                     cell.font = Font(bold=True)
@@ -234,24 +229,32 @@ class ExcelGenerator:
             match_col = len(game) + 1
             match_cell = ws.cell(row=row_idx, column=match_col)
             # Fórmula para contar acertos: Soma de COUNTIF para cada célula na linha
-            # Isso conta quantos números nesta linha existem na aba Entrada Manual
-            start_col = get_column_letter(1)
-            end_col = get_column_letter(len(game))
-            # Construir fórmula: =COUNTIF('Entrada Manual'!$A$6:$F$6,A4)+COUNTIF('Entrada Manual'!$A$6:$F$6,B4)+...
-            # Excel requer que nomes de abas com espaços sejam envolvidos em aspas simples
             formula_parts = []
             for col_idx in range(1, len(game) + 1):
                 col_letter = get_column_letter(col_idx)
                 formula_parts.append(f"COUNTIF('Entrada Manual'!$A$6:$F$6,{col_letter}{row_idx})")
-            # In openpyxl, formulas are assigned to value, not formula attribute
             match_cell.value = '=' + '+'.join(formula_parts)
             match_cell.border = self._border
             match_cell.alignment = Alignment(horizontal='center', vertical='center')
             
-            # Add conditional formatting for match count
             if has_match:
                 match_cell.fill = self._match_fill
                 match_cell.font = Font(bold=True)
+        
+        # Adicionar formatação condicional por RANGE (muito mais eficiente)
+        if use_conditional_formatting and manual_set and sorted_games:
+            numbers_per_game = len(sorted_games[0])
+            for col_idx in range(1, numbers_per_game + 1):
+                col_letter = get_column_letter(col_idx)
+                range_ref = f'{col_letter}{start_data_row}:{col_letter}{end_data_row}'
+                
+                # Uma regra para todo o range ao invés de uma por célula
+                fill_rule = FormulaRule(
+                    formula=[f"COUNTIF('Entrada Manual'!$A$6:$F$6,{col_letter}{start_data_row})>0"],
+                    fill=self._green_fill,
+                    font=Font(bold=True)
+                )
+                ws.conditional_formatting.add(range_ref, fill_rule)
     
     def _create_games_sheet_streaming(
         self,
@@ -374,28 +377,28 @@ class ExcelGenerator:
         """
         Escreve jogos na planilha de forma eficiente
         Usado para escrita incremental em grandes volumes
+        OTIMIZADO: Usa formatação por range ao invés de célula por célula
         """
+        if not games:
+            return
+        
+        end_row = start_row + len(games) - 1
+        
+        # Para volumes maiores, desabilitar formatação condicional (muito pesado)
+        use_conditional_formatting = len(games) <= 1000
+        
+        # Escrever dados primeiro
         for idx, game in enumerate(games):
             row_idx = start_row + idx
             # Verificar correspondências
             matches = manual_set & set(game) if manual_set else set()
-            has_match = len(matches) > 0
             
             for col_idx, number in enumerate(game, start=1):
                 cell = ws.cell(row=row_idx, column=col_idx, value=number)
                 cell.border = self._border
                 cell.alignment = Alignment(horizontal='center', vertical='center')
                 
-                # Adicionar formatação condicional para destacar números correspondentes em verde
-                col_letter = get_column_letter(col_idx)
-                fill_rule = FormulaRule(
-                    formula=[f"COUNTIF('Entrada Manual'!$A$6:$F$6,{col_letter}{row_idx})>0"],
-                    fill=self._green_fill,
-                    font=Font(bold=True)
-                )
-                ws.conditional_formatting.add(f'{col_letter}{row_idx}', fill_rule)
-                
-                # Destaque inicial se corresponde à entrada manual
+                # Destaque direto se corresponde à entrada manual (mais eficiente)
                 if number in matches:
                     cell.fill = self._match_fill
                     cell.font = Font(bold=True)
@@ -412,10 +415,23 @@ class ExcelGenerator:
             match_cell.border = self._border
             match_cell.alignment = Alignment(horizontal='center', vertical='center')
             
-            # Adicionar formatação condicional para contagem de acertos
-            if has_match:
+            if matches:
                 match_cell.fill = self._match_fill
                 match_cell.font = Font(bold=True)
+        
+        # Adicionar formatação condicional por RANGE (muito mais eficiente)
+        if use_conditional_formatting and manual_set:
+            for col_idx in range(1, numbers_per_game + 1):
+                col_letter = get_column_letter(col_idx)
+                range_ref = f'{col_letter}{start_row}:{col_letter}{end_row}'
+                
+                # Uma regra para todo o range ao invés de uma por célula
+                fill_rule = FormulaRule(
+                    formula=[f"COUNTIF('Entrada Manual'!$A$6:$F$6,{col_letter}{start_row})>0"],
+                    fill=self._green_fill,
+                    font=Font(bold=True)
+                )
+                ws.conditional_formatting.add(range_ref, fill_rule)
     
     def _write_games_to_sheet_batch(
         self,
@@ -427,17 +443,24 @@ class ExcelGenerator:
     ):
         """
         Escreve jogos em batch otimizado para grandes volumes
-        Usa escrita em lote para melhor performance
+        Usa escrita em lote e formatação por range para melhor performance
         """
-        # Para volumes muito grandes, otimizar escrita
+        if not games:
+            return
+        
+        end_row = start_row + len(games) - 1
+        
+        # Para volumes maiores, desabilitar formatação condicional (muito pesado)
+        use_conditional_formatting = len(games) <= 1000
+        
         # Agrupar operações similares
         manual_set_frozen = frozenset(manual_set) if manual_set else frozenset()
         
+        # Escrever dados primeiro
         for idx, game in enumerate(games):
             row_idx = start_row + idx
             game_set = set(game)
             matches = manual_set_frozen & game_set if manual_set_frozen else set()
-            has_match = len(matches) > 0
             
             # Escrever números do jogo
             for col_idx, number in enumerate(game, start=1):
@@ -445,18 +468,7 @@ class ExcelGenerator:
                 cell.border = self._border
                 cell.alignment = Alignment(horizontal='center', vertical='center')
                 
-                # Formatação condicional (apenas para volumes menores)
-                # Para 1M+ jogos, pular formatação condicional para performance
-                if len(games) < 100_000:
-                    col_letter = get_column_letter(col_idx)
-                    fill_rule = FormulaRule(
-                        formula=[f"COUNTIF('Entrada Manual'!$A$6:$F$6,{col_letter}{row_idx})>0"],
-                        fill=self._green_fill,
-                        font=Font(bold=True)
-                    )
-                    ws.conditional_formatting.add(f'{col_letter}{row_idx}', fill_rule)
-                
-                # Destaque inicial se corresponde à entrada manual
+                # Destaque direto se corresponde à entrada manual (mais eficiente)
                 if number in matches:
                     cell.fill = self._match_fill
                     cell.font = Font(bold=True)
@@ -473,9 +485,23 @@ class ExcelGenerator:
             match_cell.border = self._border
             match_cell.alignment = Alignment(horizontal='center', vertical='center')
             
-            if has_match:
+            if matches:
                 match_cell.fill = self._match_fill
                 match_cell.font = Font(bold=True)
+        
+        # Adicionar formatação condicional por RANGE (muito mais eficiente)
+        if use_conditional_formatting and manual_set:
+            for col_idx in range(1, numbers_per_game + 1):
+                col_letter = get_column_letter(col_idx)
+                range_ref = f'{col_letter}{start_row}:{col_letter}{end_row}'
+                
+                # Uma regra para todo o range ao invés de uma por célula
+                fill_rule = FormulaRule(
+                    formula=[f"COUNTIF('Entrada Manual'!$A$6:$F$6,{col_letter}{start_row})>0"],
+                    fill=self._green_fill,
+                    font=Font(bold=True)
+                )
+                ws.conditional_formatting.add(range_ref, fill_rule)
     
     def _create_audit_sheet(self, wb: Workbook, constraints: GameConstraints, budget: float, quantity: int):
         """Cria Aba 3: Regras e Resumo (Auditoria)"""
