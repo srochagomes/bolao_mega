@@ -136,6 +136,26 @@ class HistoricalDataService:
         """Get the last update timestamp"""
         return self._last_update
     
+    def get_last_two_draws_numbers(self) -> Set[int]:
+        """
+        Get all numbers from the last two draws (most recent and second most recent)
+        Returns a set containing all numbers from both draws
+        
+        Returns:
+            Set of numbers from last two draws, or empty set if data not available
+        """
+        if self._data is None or len(self._data) < 2:
+            return set()
+        
+        # Get last draw (index 0) and second to last draw (index 1)
+        last_draw = self.get_draw_numbers(0)
+        second_last_draw = self.get_draw_numbers(1)
+        
+        # Combine both draws into a single set
+        combined_numbers = set(last_draw) | set(second_last_draw)
+        
+        return combined_numbers
+    
     def _build_caches(self):
         """Build performance caches for fast lookups"""
         if self._data is None or len(self._data) == 0:

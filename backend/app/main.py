@@ -7,6 +7,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 import logging
 
+# Import Ray config early to set environment variables before Ray initialization
+from app.services import ray_config  # noqa: F401
+
 from app.api import generation, jobs, historical, files
 from app.core.config import settings
 

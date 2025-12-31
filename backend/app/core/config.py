@@ -2,7 +2,7 @@
 Application configuration
 """
 from pydantic_settings import BaseSettings
-from typing import List
+from typing import List, Optional
 
 
 class Settings(BaseSettings):
@@ -20,6 +20,11 @@ class Settings(BaseSettings):
     JOB_TTL_SECONDS: int = 1800  # 30 minutes
     MAX_GAMES_PER_REQUEST: int = 10_000_000  # 10 milhões de jogos (usando streaming)
     MAX_PROCESSING_TIME_SECONDS: int = 3600  # 60 minutes (aumentado para grandes volumes)
+    
+    # Ray Configuration
+    USE_RAY: bool = True  # Use Ray for distributed processing if available
+    RAY_MIN_QUANTITY: int = 100  # Use Ray only for quantities >= this value
+    RAY_NUM_WORKERS: Optional[int] = None  # None = use all available CPUs
     
     # Rate Limiting
     RATE_LIMIT_PER_MINUTE: int = 10

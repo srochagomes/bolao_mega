@@ -20,16 +20,16 @@ class GenerationEngine:
     """Game generation engine - orchestrates specialized services"""
     
     def __init__(self):
-        self._max_attempts = 5000  # Maximum attempts to generate valid game
+        self._max_attempts = 500  # Maximum attempts to generate valid game (reduced for performance)
         
         # Specialized services
         self._number_generator = NumberGenerator()
         self._validator = GameValidator()
         self._scorer = GameScorer()
         self._level_manager = ValidationLevelManager(
-            failure_threshold_strict=50,
-            failure_threshold_normal=100,
-            failure_threshold_relaxed=200
+            failure_threshold_strict=20,  # Reduced for faster adaptation
+            failure_threshold_normal=50,
+            failure_threshold_relaxed=100
         )
     
     def generate_games(
@@ -49,7 +49,7 @@ class GenerationEngine:
             rng = np.random.RandomState(constraints.seed) if constraints.seed else np.random
             
             consecutive_failures = 0
-            max_consecutive_failures = 10  # Stop after 10 consecutive failures
+            max_consecutive_failures = 300  # Increased to allow adaptive system to work
             
             for i in range(quantity):
                 if (i + 1) % 100 == 0:
@@ -66,10 +66,20 @@ class GenerationEngine:
                     consecutive_failures = 0  # Reset on success
                 else:
                     consecutive_failures += 1
-                    logger.warning(f"Failed to generate game {i+1} after {self._max_attempts} attempts (consecutive failures: {consecutive_failures})")
                     
-                    if consecutive_failures >= max_consecutive_failures:
-                        # Too many failures - stop and raise error
+                    # Log warning only every 10 failures to reduce log spam
+                    if consecutive_failures % 10 == 0 or consecutive_failures <= 5:
+                        logger.warning(f"Failed to generate game {i+1} after {self._max_attempts} attempts (consecutive failures: {consecutive_failures}, level: {validation_level.value})")
+                    
+                    # Adaptive max failures: more lenient as validation level relaxes
+                    adaptive_max_failures = max_consecutive_failures
+                    if validation_level == ValidationLevel.MINIMAL:
+                        adaptive_max_failures = max_consecutive_failures * 2  # Double for minimal
+                    elif validation_level == ValidationLevel.RELAXED:
+                        adaptive_max_failures = int(max_consecutive_failures * 1.5)  # 1.5x for relaxed
+                    
+                    if consecutive_failures >= adaptive_max_failures:
+                        # Too many failures even with relaxed rules - stop and raise error
                         generated = len(games)
                         remaining = quantity - generated
                         raise ValueError(
@@ -80,9 +90,15 @@ class GenerationEngine:
                             f"ou ajustar os números fixos."
                         )
                     
-                    # Fallback: generate without strict constraints
-                    game = self._generate_fallback_game(constraints, rng)
+                    # Fallback: generate without strict constraints BUT respect repetition limits
+                    game = self._generate_fallback_with_repetition_check(constraints, rng, games)
                     games.append(game)
+                    
+                    # Don't reset consecutive_failures on fallback - keep counting to allow adaptive system to work
+                    # But reset if we get a few successful generations
+                    if consecutive_failures > 50 and len(games) % 10 == 0:
+                        # If we've been using fallback a lot, try to reset to give system another chance
+                        consecutive_failures = max(0, consecutive_failures - 5)
             
             return games
         else:
@@ -113,7 +129,9 @@ class GenerationEngine:
         rng = np.random.RandomState(constraints.seed) if constraints.seed else np.random
         
         consecutive_failures = 0
-        max_consecutive_failures = 10
+        # Adaptive max failures: allow more failures as validation level relaxes
+        # This gives the adaptive system time to work
+        max_consecutive_failures = 300  # Increased to allow adaptive system to work
         generated_count = 0
         
         # Keep a sliding window of recent games for repetition checking
@@ -127,6 +145,19 @@ class GenerationEngine:
             validation_level = self._level_manager.determine_level(consecutive_failures)
             if validation_level != ValidationLevel.STRICT and (i + 1) % 100 == 0:
                 logger.info(f"Using {validation_level.value} validation level (failures: {consecutive_failures})")
+            
+            # For relaxed levels, use fallback more aggressively for performance
+            # BUT still check repetition constraints - this is important!
+            if validation_level in [ValidationLevel.RELAXED, ValidationLevel.MINIMAL] and consecutive_failures > 10:
+                # Try to generate a fallback game that respects repetition constraints
+                game = self._generate_fallback_with_repetition_check(constraints, rng, recent_games)
+                generated_count += 1
+                consecutive_failures = max(0, consecutive_failures - 1)  # Slight reduction
+                yield game
+                recent_games.append(game)
+                if len(recent_games) > chunk_size:
+                    recent_games.pop(0)
+                continue
             
             # Use recent games for repetition checking (not all games)
             game = self._generate_single_game(constraints, rng, recent_games, validation_level)
@@ -144,10 +175,21 @@ class GenerationEngine:
                     recent_games.pop(0)  # Remove oldest
             else:
                 consecutive_failures += 1
-                logger.warning(f"Failed to generate game {i+1} after {self._max_attempts} attempts (consecutive failures: {consecutive_failures})")
                 
-                if consecutive_failures >= max_consecutive_failures:
-                    # Too many failures - stop and raise error
+                # Log warning only every 20 failures to reduce log spam
+                if consecutive_failures % 20 == 0 or consecutive_failures <= 3:
+                    logger.warning(f"Failed to generate game {i+1} after {self._max_attempts} attempts (consecutive failures: {consecutive_failures}, level: {validation_level.value})")
+                
+                # Adaptive max failures: more lenient as validation level relaxes
+                # At MINIMAL level, allow many more failures since rules are very relaxed
+                adaptive_max_failures = max_consecutive_failures
+                if validation_level == ValidationLevel.MINIMAL:
+                    adaptive_max_failures = max_consecutive_failures * 2  # Double for minimal
+                elif validation_level == ValidationLevel.RELAXED:
+                    adaptive_max_failures = int(max_consecutive_failures * 1.5)  # 1.5x for relaxed
+                
+                if consecutive_failures >= adaptive_max_failures:
+                    # Too many failures even with relaxed rules - stop and raise error
                     remaining = quantity - generated_count
                     raise ValueError(
                         f"Não foi possível gerar mais jogos válidos. "
@@ -157,10 +199,18 @@ class GenerationEngine:
                         f"ou ajustar os números fixos."
                     )
                 
-                # Fallback: generate without strict constraints
-                game = self._generate_fallback_game(constraints, rng)
+                # Fallback: generate without strict constraints BUT respect repetition limits
+                # This ensures we always generate something, even if it doesn't pass all rules
+                # BUT we must still respect max_repetition constraint
+                game = self._generate_fallback_with_repetition_check(constraints, rng, recent_games)
                 generated_count += 1
                 yield game
+                
+                # Don't reset consecutive_failures on fallback - keep counting to allow adaptive system to work
+                # But reset if we get a few successful generations (more aggressive reset for performance)
+                if consecutive_failures > 20 and generated_count % 5 == 0:
+                    # If we've been using fallback a lot, try to reset to give system another chance
+                    consecutive_failures = max(0, consecutive_failures - 10)
                 
                 # Maintain sliding window
                 recent_games.append(game)
@@ -180,14 +230,15 @@ class GenerationEngine:
         Generate a single game that satisfies all constraints
         Uses adaptive validation level that relaxes rules when generation is difficult
         """
-        # Adaptive batch size: smaller for fixed numbers, larger for random
+        # Adaptive batch size: larger batches for better performance
+        # Use larger batches and fewer attempts for faster generation
         if constraints.fixed_numbers and len(constraints.fixed_numbers) > 0:
-            batch_size = 50  # Fixed numbers are faster to validate
+            batch_size = 100  # Fixed numbers are faster to validate
         else:
-            batch_size = 200  # Random numbers need more candidates
+            batch_size = 500  # Random numbers need more candidates
         
-        # Try fewer batches but with early exit
-        max_batches = 20
+        # Try fewer batches but with early exit - reduced for performance
+        max_batches = 5  # Reduced from 20 to 5 for faster failure and fallback
         
         for batch_num in range(max_batches):
             # Generate a batch of games
@@ -219,9 +270,13 @@ class GenerationEngine:
                 # Score the game
                 is_valid, score = self._scorer.score_game(game, constraints, validation_level)
                 if is_valid:
-                    # Check repetition constraints
-                    if existing_games:
-                        if constraints.min_repetition is not None or constraints.max_repetition is not None:
+                    # Check repetition constraints - ALWAYS check if constraints are set
+                    # This is important to ensure max_repetition is always respected
+                    if constraints.min_repetition is not None or constraints.max_repetition is not None:
+                        if not existing_games:
+                            # First game - no repetition to check, accept it
+                            pass
+                        else:
                             valid_repetition = True
                             for existing_game in existing_games:
                                 repeated = len(set(game) & set(existing_game))
@@ -231,6 +286,7 @@ class GenerationEngine:
                                     break
                                 if constraints.max_repetition is not None and repeated > constraints.max_repetition:
                                     valid_repetition = False
+                                    logger.debug(f"Game {game} has {repeated} repeated numbers with {existing_game}, max allowed: {constraints.max_repetition}")
                                     break
                             
                             if not valid_repetition:
@@ -241,8 +297,8 @@ class GenerationEngine:
                         return game
                     
                     # For random numbers, return if score is reasonable (early exit)
-                    # Lower threshold for relaxed validation levels
-                    score_threshold = 5.0 if validation_level == ValidationLevel.STRICT else 3.0
+                    # Lower threshold for relaxed validation levels - more lenient for performance
+                    score_threshold = 3.0 if validation_level == ValidationLevel.STRICT else 1.0
                     if score >= score_threshold:
                         return game
             
@@ -259,6 +315,7 @@ class GenerationEngine:
         """
         Generate a fallback game with minimal constraints
         If fixed_numbers are provided, use ONLY those numbers
+        NOTE: This does NOT check repetition - use _generate_fallback_with_repetition_check if needed
         """
         # If fixed_numbers are provided, use ONLY those numbers
         if constraints.fixed_numbers and len(constraints.fixed_numbers) > 0:
@@ -275,3 +332,86 @@ class GenerationEngine:
         available = list(range(1, 61))
         selected = rng.choice(available, size=constraints.numbers_per_game, replace=False)
         return sorted(list(selected))
+    
+    def _generate_fallback_with_repetition_check(
+        self,
+        constraints: GameConstraints,
+        rng: np.random.RandomState,
+        existing_games: List[List[int]]
+    ) -> List[int]:
+        """
+        Generate a fallback game that respects repetition constraints
+        Tries multiple times to find a game that meets max_repetition requirement
+        """
+        max_attempts = 100  # Try up to 100 times to find a valid game
+        
+        for attempt in range(max_attempts):
+            game = self._generate_fallback_game(constraints, rng)
+            
+            # Check repetition constraints if specified
+            if constraints.min_repetition is not None or constraints.max_repetition is not None:
+                if not existing_games:
+                    # First game - no repetition to check, accept it
+                    return game
+                
+                valid_repetition = True
+                for existing_game in existing_games:
+                    repeated = len(set(game) & set(existing_game))
+                    
+                    if constraints.min_repetition is not None and repeated < constraints.min_repetition:
+                        valid_repetition = False
+                        break
+                    if constraints.max_repetition is not None and repeated > constraints.max_repetition:
+                        valid_repetition = False
+                        logger.debug(f"Fallback game {game} has {repeated} repeated numbers with {existing_game}, max allowed: {constraints.max_repetition}")
+                        break
+                
+                if valid_repetition:
+                    return game
+            else:
+                # No repetition constraints - return immediately
+                return game
+        
+        # If we couldn't find a valid game after max_attempts, return the last generated one
+        # This ensures we always return something, even if it doesn't meet repetition constraints
+        logger.warning(f"Could not generate fallback game meeting repetition constraints after {max_attempts} attempts")
+        return self._generate_fallback_game(constraints, rng)
+    
+    def _generate_fallback_with_repetition_check(
+        self,
+        constraints: GameConstraints,
+        rng: np.random.RandomState,
+        existing_games: List[List[int]]
+    ) -> List[int]:
+        """
+        Generate a fallback game that respects repetition constraints
+        Tries multiple times to find a game that meets max_repetition requirement
+        """
+        max_attempts = 100  # Try up to 100 times to find a valid game
+        
+        for attempt in range(max_attempts):
+            game = self._generate_fallback_game(constraints, rng)
+            
+            # Check repetition constraints if specified
+            if existing_games and (constraints.min_repetition is not None or constraints.max_repetition is not None):
+                valid_repetition = True
+                for existing_game in existing_games:
+                    repeated = len(set(game) & set(existing_game))
+                    
+                    if constraints.min_repetition is not None and repeated < constraints.min_repetition:
+                        valid_repetition = False
+                        break
+                    if constraints.max_repetition is not None and repeated > constraints.max_repetition:
+                        valid_repetition = False
+                        break
+                
+                if valid_repetition:
+                    return game
+            else:
+                # No repetition constraints - return immediately
+                return game
+        
+        # If we couldn't find a valid game after max_attempts, return the last generated one
+        # This ensures we always return something, even if it doesn't meet repetition constraints
+        logger.warning(f"Could not generate fallback game meeting repetition constraints after {max_attempts} attempts")
+        return self._generate_fallback_game(constraints, rng)

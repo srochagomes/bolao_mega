@@ -12,6 +12,14 @@ from app.models.jobs import JobStatus, JobInfo
 from app.models.generation import GenerationRequest
 from app.services.generator import GenerationEngine
 from app.services.excel_generator import ExcelGenerator
+
+# Try to import Ray engine
+try:
+    from app.services.generator_ray import GenerationEngineRay
+    RAY_AVAILABLE = True
+except ImportError:
+    RAY_AVAILABLE = False
+    GenerationEngineRay = None
 from app.services.statistics import statistics_service
 from app.services.historical_data import historical_data_service
 from app.services.file_manager import file_manager
@@ -31,6 +39,22 @@ class JobProcessor:
         self._ttl = timedelta(seconds=settings.JOB_TTL_SECONDS)
         self._max_processing_time = settings.MAX_PROCESSING_TIME_SECONDS
         self._generator = GenerationEngine()
+        
+        # Initialize Ray engine if available and enabled
+        self._use_ray = settings.USE_RAY and RAY_AVAILABLE
+        if self._use_ray:
+            self._ray_generator = GenerationEngineRay(
+                use_ray=True,
+                num_workers=settings.RAY_NUM_WORKERS
+            )
+            logger.info("Ray engine initialized for distributed processing")
+        else:
+            self._ray_generator = None
+            if not RAY_AVAILABLE:
+                logger.info("Ray not available, using sequential processing")
+            else:
+                logger.info("Ray disabled in settings, using sequential processing")
+        
         self._excel_gen = ExcelGenerator()
         self._executor = ThreadPoolExecutor(max_workers=3, thread_name_prefix="job_processor")
     
@@ -88,18 +112,34 @@ class JobProcessor:
             try:
                 loop = asyncio.get_event_loop()
                 
+                # Decide whether to use Ray based on quantity and settings
+                use_ray = (
+                    self._use_ray and
+                    request.quantity >= settings.RAY_MIN_QUANTITY
+                )
+                
                 # Always use streaming for quantities > 1000 to ensure memory efficiency
                 # For very large quantities (millions), streaming is essential
                 use_streaming = request.quantity > 1000
                 
                 if use_streaming:
-                    logger.info(f"Using streaming mode for {request.quantity} games (memory efficient)")
-                    # Create generator in executor - it will be consumed during Excel generation
+                    logger.info(
+                        f"Using streaming mode for {request.quantity} games "
+                        f"({'with Ray' if use_ray else 'sequential'})"
+                    )
+                    
+                    # Create generator - Ray or sequential
                     def create_games_iterator():
-                        return self._generator.generate_games_streaming(
-                            request.quantity,
-                            request.constraints
-                        )
+                        if use_ray and self._ray_generator:
+                            return self._ray_generator.generate_games_streaming(
+                                request.quantity,
+                                request.constraints
+                            )
+                        else:
+                            return self._generator.generate_games_streaming(
+                                request.quantity,
+                                request.constraints
+                            )
                     
                     games = await asyncio.wait_for(
                         loop.run_in_executor(
@@ -111,16 +151,30 @@ class JobProcessor:
                     # games is now an iterator that will be consumed during Excel generation
                 else:
                     # Traditional approach for smaller quantities
+                    def generate_games():
+                        if use_ray and self._ray_generator:
+                            return self._ray_generator.generate_games(
+                                request.quantity,
+                                request.constraints
+                            )
+                        else:
+                            return self._generator.generate_games(
+                                request.quantity,
+                                request.constraints
+                            )
+                    
                     games = await asyncio.wait_for(
                         loop.run_in_executor(
                             self._executor,
-                            self._generator.generate_games,
-                            request.quantity,
-                            request.constraints
+                            generate_games
                         ),
                         timeout=self._max_processing_time
                     )
-                    logger.info(f"Game generation completed for job {process_id}: {len(games)} games generated")
+                    logger.info(
+                        f"Game generation completed for job {process_id}: "
+                        f"{len(games)} games generated "
+                        f"({'with Ray' if use_ray else 'sequential'})"
+                    )
                 
             except asyncio.TimeoutError:
                 error_msg = f"Geração de jogos excedeu o tempo limite de {self._max_processing_time} segundos. Tente reduzir a quantidade de jogos ou ajustar os números fixos."
@@ -161,7 +215,9 @@ class JobProcessor:
             job_info.updated_at = datetime.now()
             job_info.download_url = f"/api/v1/jobs/{process_id}/download"
             
-            logger.info(f"Job {process_id} completed successfully: {len(games)} games generated")
+            # Log success - use quantity for generators, len() for lists
+            games_count = len(games) if isinstance(games, list) else request.quantity
+            logger.info(f"Job {process_id} completed successfully: {games_count} games generated")
             
         except Exception as e:
             logger.error(f"Error processing job {process_id}: {e}", exc_info=True)

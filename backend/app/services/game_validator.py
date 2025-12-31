@@ -65,6 +65,16 @@ class GameValidator:
                 if historical_data_service.has_quina_match(sorted_game):
                     logger.debug(f"Game {sorted_game} has quina match with historical data - rejecting")
                     return False
+                
+                # RULE 1.5: MAX 2 NUMBERS FROM LAST TWO DRAWS (FUNDAMENTAL - NEVER RELAXED)
+                # No máximo 2 dezenas podem estar entre o último e penúltimo sorteio
+                last_two_draws_numbers = historical_data_service.get_last_two_draws_numbers()
+                if last_two_draws_numbers:
+                    game_set = set(sorted_game)
+                    numbers_in_last_two = game_set & last_two_draws_numbers
+                    if len(numbers_in_last_two) > 2:
+                        logger.debug(f"Game {sorted_game} has {len(numbers_in_last_two)} numbers from last two draws (max 2 allowed): {numbers_in_last_two} - rejecting")
+                        return False
         
         # RULE 2: CONSECUTIVE NUMBERS (HIGH PRIORITY - RELAXED IN MINIMAL)
         # Check for 4 or more consecutive numbers - only for 6-number games

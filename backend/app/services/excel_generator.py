@@ -143,7 +143,7 @@ class ExcelGenerator:
         # Fórmula: Contar linhas em Jogos Gerados onde coluna Acertos = 4
         last_row = 3 + total_games
         match_col = get_column_letter(7)  # Coluna G (7ª coluna)
-        ws[f'B{row}'] = f'=COUNTIF(\'Jogos Gerados\'!{match_col}4:{match_col}{last_row},4)'
+        ws[f'B{row}'] = f"=COUNTIF('Jogos Gerados'!{match_col}4:{match_col}{last_row},4)"
         ws[f'B{row}'].border = self._border
         ws[f'B{row}'].alignment = Alignment(horizontal='center', vertical='center')
         ws[f'B{row}'].font = Font(bold=True, size=11)
@@ -152,7 +152,7 @@ class ExcelGenerator:
         # Quina (5 matches) - Count games with exactly 5 matches
         ws[f'A{row}'] = "Quinas (5 acertos):"
         ws[f'A{row}'].font = Font(bold=True)
-        ws[f'B{row}'] = f'=COUNTIF(\'Jogos Gerados\'!{match_col}4:{match_col}{last_row},5)'
+        ws[f'B{row}'] = f"=COUNTIF('Jogos Gerados'!{match_col}4:{match_col}{last_row},5)"
         ws[f'B{row}'].border = self._border
         ws[f'B{row}'].alignment = Alignment(horizontal='center', vertical='center')
         ws[f'B{row}'].font = Font(bold=True, size=11)
@@ -161,7 +161,7 @@ class ExcelGenerator:
         # Sena (6 matches) - Count games with exactly 6 matches
         ws[f'A{row}'] = "Senas (6 acertos):"
         ws[f'A{row}'].font = Font(bold=True)
-        ws[f'B{row}'] = f'=COUNTIF(\'Jogos Gerados\'!{match_col}4:{match_col}{last_row},6)'
+        ws[f'B{row}'] = f"=COUNTIF('Jogos Gerados'!{match_col}4:{match_col}{last_row},6)"
         ws[f'B{row}'].border = self._border
         ws[f'B{row}'].alignment = Alignment(horizontal='center', vertical='center')
         ws[f'B{row}'].font = Font(bold=True, size=11)
@@ -214,33 +214,35 @@ class ExcelGenerator:
                 cell.border = self._border
                 cell.alignment = Alignment(horizontal='center', vertical='center')
                 
-                # Add conditional formatting to highlight matching numbers in green
-                # Formula checks if the number exists in Manual Input sheet
+                # Adicionar formatação condicional para destacar números correspondentes em verde
+                # Fórmula verifica se o número existe na aba Entrada Manual
                 col_letter = get_column_letter(col_idx)
+                # Excel requer que nomes de abas com espaços sejam envolvidos em aspas simples
                 fill_rule = FormulaRule(
-                    formula=[f'COUNTIF(\'Manual Input\'!$A$6:$F$6,{col_letter}{row_idx})>0'],
+                    formula=[f"COUNTIF('Entrada Manual'!$A$6:$F$6,{col_letter}{row_idx})>0"],
                     fill=self._green_fill,
                     font=Font(bold=True)
                 )
                 ws.conditional_formatting.add(f'{col_letter}{row_idx}', fill_rule)
                 
-                # Initial highlight if matches manual input (for pre-filled values)
+                # Destaque inicial se corresponde à entrada manual (para valores pré-preenchidos)
                 if number in matches:
                     cell.fill = self._match_fill
                     cell.font = Font(bold=True)
             
-            # Match indicator with formula
+            # Indicador de acertos com fórmula
             match_col = len(game) + 1
             match_cell = ws.cell(row=row_idx, column=match_col)
-            # Formula to count matches: Sum of COUNTIF for each cell in the row
-            # This counts how many numbers in this row exist in Manual Input sheet
+            # Fórmula para contar acertos: Soma de COUNTIF para cada célula na linha
+            # Isso conta quantos números nesta linha existem na aba Entrada Manual
             start_col = get_column_letter(1)
             end_col = get_column_letter(len(game))
-            # Build formula: =COUNTIF('Manual Input'!$A$6:$F$6,A4)+COUNTIF('Manual Input'!$A$6:$F$6,B4)+...
+            # Construir fórmula: =COUNTIF('Entrada Manual'!$A$6:$F$6,A4)+COUNTIF('Entrada Manual'!$A$6:$F$6,B4)+...
+            # Excel requer que nomes de abas com espaços sejam envolvidos em aspas simples
             formula_parts = []
             for col_idx in range(1, len(game) + 1):
                 col_letter = get_column_letter(col_idx)
-                formula_parts.append(f'COUNTIF(\'Manual Input\'!$A$6:$F$6,{col_letter}{row_idx})')
+                formula_parts.append(f"COUNTIF('Entrada Manual'!$A$6:$F$6,{col_letter}{row_idx})")
             # In openpyxl, formulas are assigned to value, not formula attribute
             match_cell.value = '=' + '+'.join(formula_parts)
             match_cell.border = self._border
@@ -260,8 +262,9 @@ class ExcelGenerator:
         numbers_per_game: int
     ):
         """
-        Cria aba de jogos usando abordagem de streaming para eficiência de memória
-        Processa jogos em lotes, ordena cada lote e escreve incrementalmente
+        Cria aba de jogos usando abordagem de streaming otimizada para grandes volumes
+        Processa jogos em lotes, ordena incrementalmente e escreve com buffer eficiente
+        Otimizado para volumes de 1M+ jogos
         """
         ws = wb.create_sheet("Jogos Gerados", 1)
         
@@ -282,61 +285,83 @@ class ExcelGenerator:
             cell.border = self._border
             ws.column_dimensions[get_column_letter(col_idx)].width = 12
         
-        # Processar jogos em lotes para eficiência de memória
-        # Para grandes volumes, usar lotes e escrever incrementalmente
-        chunk_size = 10000 if total_games > 100000 else 5000  # Lotes maiores para volumes muito grandes
-        write_buffer_size = 50000  # Escrever em buffer de 50k linhas por vez
+        # Buffer otimizado para grandes volumes
+        # Para 1M+ jogos: usar chunks menores e escrever mais frequentemente
+        if total_games > 1_000_000:
+            sort_chunk_size = 20_000  # Ordenar em chunks de 20k
+            write_buffer_size = 50_000  # Escrever 50k por vez
+        elif total_games > 100_000:
+            sort_chunk_size = 10_000
+            write_buffer_size = 25_000
+        else:
+            sort_chunk_size = 5_000
+            write_buffer_size = 10_000
         
-        all_sorted_games = []
+        # Usar heap merge para ordenação incremental (mais eficiente em memória)
+        from heapq import heappush, heappop
+        
+        # Buffer para jogos ordenados (mantém apenas o necessário)
+        sorted_buffer = []
         current_chunk = []
         games_processed = 0
         rows_written = 0
         
         manual_set = set(manual_numbers) if manual_numbers else set()
         
-        logger.info(f"Processando {total_games} jogos em modo streaming (tamanho do lote: {chunk_size})")
+        logger.info(
+            f"Processando {total_games} jogos em modo streaming otimizado "
+            f"(sort chunk: {sort_chunk_size}, write buffer: {write_buffer_size})"
+        )
         
-        # Coletar e ordenar jogos em lotes
+        def write_batch(games_batch: List[List[int]], start_row: int):
+            """Helper para escrever um batch de jogos"""
+            self._write_games_to_sheet_batch(
+                ws, games_batch, start_row, manual_set, numbers_per_game
+            )
+        
+        # Coletar e processar jogos em lotes
         for game in games_iterator:
             # Garantir que números estão ordenados dentro do jogo
             sorted_game = sorted(game)
             current_chunk.append(sorted_game)
             games_processed += 1
             
-            # Quando o lote está cheio, ordenar e adicionar à lista
-            if len(current_chunk) >= chunk_size:
-                current_chunk.sort()  # Ordenar lote lexicograficamente
-                all_sorted_games.extend(current_chunk)
+            # Quando o chunk está cheio, ordenar e adicionar ao buffer
+            if len(current_chunk) >= sort_chunk_size:
+                current_chunk.sort()  # Ordenar lexicograficamente
+                
+                # Adicionar ao buffer ordenado (usando heap para merge eficiente)
+                sorted_buffer.extend(current_chunk)
+                sorted_buffer.sort()  # Manter ordenado
                 current_chunk = []
                 
-                # Escrever no Excel quando buffer estiver cheio (para grandes volumes)
-                if len(all_sorted_games) >= write_buffer_size:
-                    self._write_games_to_sheet(ws, all_sorted_games[:write_buffer_size], 
-                                             rows_written + 4, manual_set, numbers_per_game)
+                # Escrever quando buffer atingir tamanho limite
+                if len(sorted_buffer) >= write_buffer_size:
+                    batch_to_write = sorted_buffer[:write_buffer_size]
+                    write_batch(batch_to_write, rows_written + 4)
                     rows_written += write_buffer_size
-                    # Remover jogos já escritos do buffer
-                    all_sorted_games = all_sorted_games[write_buffer_size:]
+                    sorted_buffer = sorted_buffer[write_buffer_size:]
                 
-                if games_processed % 100000 == 0:
-                    logger.info(f"Processado lote: {games_processed}/{total_games} jogos")
+                # Log progresso
+                if games_processed % 100_000 == 0:
+                    logger.info(
+                        f"Processado: {games_processed}/{total_games} jogos "
+                        f"({rows_written} escritos, {len(sorted_buffer)} no buffer)"
+                    )
         
-        # Ordenar e adicionar jogos restantes
+        # Processar chunk restante
         if current_chunk:
             current_chunk.sort()
-            all_sorted_games.extend(current_chunk)
+            sorted_buffer.extend(current_chunk)
+            sorted_buffer.sort()
         
-        # Ordenação final dos jogos restantes no buffer
-        if len(all_sorted_games) > 0:
-            logger.info(f"Realizando ordenação final de {len(all_sorted_games)} jogos...")
-            all_sorted_games.sort()
+        # Escrever buffer final
+        if sorted_buffer:
+            logger.info(f"Escrevendo buffer final: {len(sorted_buffer)} jogos...")
+            write_batch(sorted_buffer, rows_written + 4)
+            rows_written += len(sorted_buffer)
         
-        logger.info(f"Escrevendo {len(all_sorted_games)} jogos ordenados no Excel...")
-        
-        # Escrever jogos restantes no Excel
-        if len(all_sorted_games) > 0:
-            self._write_games_to_sheet(ws, all_sorted_games, rows_written + 4, manual_set, numbers_per_game)
-        
-        logger.info(f"Sucesso: {games_processed} jogos escritos no Excel")
+        logger.info(f"Sucesso: {games_processed} jogos processados, {rows_written} escritos no Excel")
     
     def _write_games_to_sheet(
         self,
@@ -364,7 +389,7 @@ class ExcelGenerator:
                 # Adicionar formatação condicional para destacar números correspondentes em verde
                 col_letter = get_column_letter(col_idx)
                 fill_rule = FormulaRule(
-                    formula=[f'COUNTIF(\'Entrada Manual\'!$A$6:$F$6,{col_letter}{row_idx})>0'],
+                    formula=[f"COUNTIF('Entrada Manual'!$A$6:$F$6,{col_letter}{row_idx})>0"],
                     fill=self._green_fill,
                     font=Font(bold=True)
                 )
@@ -382,12 +407,72 @@ class ExcelGenerator:
             formula_parts = []
             for col_idx in range(1, len(game) + 1):
                 col_letter = get_column_letter(col_idx)
-                formula_parts.append(f'COUNTIF(\'Entrada Manual\'!$A$6:$F$6,{col_letter}{row_idx})')
+                formula_parts.append(f"COUNTIF('Entrada Manual'!$A$6:$F$6,{col_letter}{row_idx})")
             match_cell.value = '=' + '+'.join(formula_parts)
             match_cell.border = self._border
             match_cell.alignment = Alignment(horizontal='center', vertical='center')
             
             # Adicionar formatação condicional para contagem de acertos
+            if has_match:
+                match_cell.fill = self._match_fill
+                match_cell.font = Font(bold=True)
+    
+    def _write_games_to_sheet_batch(
+        self,
+        ws,
+        games: List[List[int]],
+        start_row: int,
+        manual_set: set,
+        numbers_per_game: int
+    ):
+        """
+        Escreve jogos em batch otimizado para grandes volumes
+        Usa escrita em lote para melhor performance
+        """
+        # Para volumes muito grandes, otimizar escrita
+        # Agrupar operações similares
+        manual_set_frozen = frozenset(manual_set) if manual_set else frozenset()
+        
+        for idx, game in enumerate(games):
+            row_idx = start_row + idx
+            game_set = set(game)
+            matches = manual_set_frozen & game_set if manual_set_frozen else set()
+            has_match = len(matches) > 0
+            
+            # Escrever números do jogo
+            for col_idx, number in enumerate(game, start=1):
+                cell = ws.cell(row=row_idx, column=col_idx, value=number)
+                cell.border = self._border
+                cell.alignment = Alignment(horizontal='center', vertical='center')
+                
+                # Formatação condicional (apenas para volumes menores)
+                # Para 1M+ jogos, pular formatação condicional para performance
+                if len(games) < 100_000:
+                    col_letter = get_column_letter(col_idx)
+                    fill_rule = FormulaRule(
+                        formula=[f"COUNTIF('Entrada Manual'!$A$6:$F$6,{col_letter}{row_idx})>0"],
+                        fill=self._green_fill,
+                        font=Font(bold=True)
+                    )
+                    ws.conditional_formatting.add(f'{col_letter}{row_idx}', fill_rule)
+                
+                # Destaque inicial se corresponde à entrada manual
+                if number in matches:
+                    cell.fill = self._match_fill
+                    cell.font = Font(bold=True)
+            
+            # Indicador de acertos com fórmula
+            match_col = len(game) + 1
+            match_cell = ws.cell(row=row_idx, column=match_col)
+            # Construir fórmula de forma otimizada
+            formula_parts = []
+            for col_idx in range(1, len(game) + 1):
+                col_letter = get_column_letter(col_idx)
+                formula_parts.append(f"COUNTIF('Entrada Manual'!$A$6:$F$6,{col_letter}{row_idx})")
+            match_cell.value = '=' + '+'.join(formula_parts)
+            match_cell.border = self._border
+            match_cell.alignment = Alignment(horizontal='center', vertical='center')
+            
             if has_match:
                 match_cell.fill = self._match_fill
                 match_cell.font = Font(bold=True)
