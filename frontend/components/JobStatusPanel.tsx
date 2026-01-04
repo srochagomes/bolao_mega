@@ -41,15 +41,38 @@ export default function JobStatusPanel({ processId, onComplete, onReset }: JobSt
         }
 
         const status = await getJobStatus(processId);
+        // Ensure progress is always a number
+        if (status.progress === undefined || status.progress === null) {
+          status.progress = 0;
+        }
         setJobInfo(status);
         setLoading(false);
 
-        if (status.status === 'completed') {
+        // Check for completion - also check progress as fallback
+        // CRITICAL: Check status first, then progress
+        const isCompleted = status.status === 'completed' || 
+                          (status.progress !== undefined && status.progress >= 0.99 && status.status !== 'failed');
+        
+        if (isCompleted) {
+          // Ensure status is set to completed and progress is 100%
+          const finalStatus = { 
+            ...status, 
+            status: 'completed' as const,
+            progress: 1.0
+          };
+          setJobInfo(finalStatus);
+          console.log(`Job ${processId} completed: status=${finalStatus.status}, progress=${finalStatus.progress}`);
           onComplete();
+          return; // Stop polling
         } else if (status.status === 'failed') {
           setError(status.error || 'Falha no processamento');
+          return; // Stop polling
         } else if (status.status === 'processing' || status.status === 'pending') {
           // Continue polling
+          timeoutId = setTimeout(pollStatus, 2000);
+        } else {
+          // Unknown status - continue polling but log warning
+          console.warn('Unknown job status:', status.status);
           timeoutId = setTimeout(pollStatus, 2000);
         }
       } catch (err) {
@@ -164,14 +187,27 @@ export default function JobStatusPanel({ processId, onComplete, onReset }: JobSt
         {jobInfo.progress !== undefined && jobInfo.progress !== null && (
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
-              Progresso: {Math.round(jobInfo.progress * 100)}%
+              Progresso: {Math.round((jobInfo.progress || 0) * 100)}%
             </label>
-            <div className="w-full bg-gray-200 rounded-full h-2.5">
+            <div className="w-full bg-gray-200 rounded-full h-2.5 mb-2">
               <div
                 className="bg-blue-600 h-2.5 rounded-full transition-all duration-300"
-                style={{ width: `${jobInfo.progress * 100}%` }}
+                style={{ width: `${Math.min(100, Math.max(0, (jobInfo.progress || 0) * 100))}%` }}
               ></div>
             </div>
+            {jobInfo.games_generated !== undefined && jobInfo.total_games !== undefined && (
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-2">
+                <p className="text-sm font-semibold text-blue-900 mb-1">
+                  🎲 Gerando Jogos
+                </p>
+                <p className="text-lg font-bold text-blue-700">
+                  {jobInfo.games_generated.toLocaleString()} de {jobInfo.total_games.toLocaleString()} jogos
+                </p>
+                <p className="text-xs text-blue-600 mt-1">
+                  {Math.round((jobInfo.games_generated / jobInfo.total_games) * 100)}% concluído
+                </p>
+              </div>
+            )}
           </div>
         )}
 

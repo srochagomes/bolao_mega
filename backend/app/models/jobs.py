@@ -23,6 +23,15 @@ class JobInfo(BaseModel):
     created_at: datetime
     updated_at: datetime
     progress: Optional[float] = None  # 0.0 to 1.0
+    games_generated: Optional[int] = None  # Number of games generated so far
+    total_games: Optional[int] = None  # Total number of games to generate
     error: Optional[str] = None
     download_url: Optional[str] = None
+    
+    class Config:
+        # Ensure enum values are serialized as strings
+        use_enum_values = True
+        json_encoders = {
+            datetime: lambda v: v.isoformat()
+        }
 

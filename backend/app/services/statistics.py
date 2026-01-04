@@ -327,6 +327,245 @@ class StatisticsService:
             'triple_probability': np.mean(has_triple)
         }
     
+    def get_first_number_distribution(self, validation_level=None) -> Dict[str, any]:
+        """
+        Analyze distribution of first numbers (number_1) in historical data
+        Returns: {
+            'distribution': {number: count},
+            'most_frequent': int,
+            'min_most_frequent': int,  # Menor número entre os mais frequentes
+            'average': float,
+            'weights': {number: weight}  # Pesos para geração
+        }
+        """
+        if self._data is None or len(self._data) == 0:
+            # Default: distribuição uniforme com leve preferência para números médios
+            default_weights = {}
+            for num in range(1, 61):
+                # Leve preferência para números 10-30
+                if 10 <= num <= 30:
+                    default_weights[num] = 1.5
+                else:
+                    default_weights[num] = 1.0
+            total = sum(default_weights.values())
+            return {
+                'distribution': {i: 0 for i in range(1, 61)},
+                'most_frequent': 20,
+                'min_most_frequent': 15,
+                'average': 20.0,
+                'weights': {num: w / total for num, w in default_weights.items()}
+            }
+        
+        # Analisar primeira dezena (number_1)
+        first_numbers = self._data['number_1'].tolist()
+        counter = Counter(first_numbers)
+        distribution = {int(num): count for num, count in counter.items()}
+        
+        # Preencher números que não apareceram com 0
+        for num in range(1, 61):
+            if num not in distribution:
+                distribution[num] = 0
+        
+        # Encontrar o menor número entre os mais frequentes
+        max_count = max(distribution.values()) if distribution.values() else 0
+        most_frequent_numbers = [num for num, count in distribution.items() if count == max_count]
+        min_most_frequent = min(most_frequent_numbers) if most_frequent_numbers else 20
+        
+        # Calcular média
+        avg = np.mean(list(distribution.keys())) if distribution else 20.0
+        
+        # Obter números dos últimos sorteios para dar peso extra
+        recent_first_numbers = set()
+        try:
+            # Pegar primeira dezena dos últimos 10 sorteios
+            for i in range(min(10, len(self._data))):
+                draw_numbers = historical_data_service.get_draw_numbers(i)
+                if draw_numbers and len(draw_numbers) > 0:
+                    recent_first_numbers.add(draw_numbers[0])  # Primeira dezena
+        except:
+            pass
+        
+        # Analisar o histórico REAL para encontrar números mais frequentes como primeira dezena
+        # Ordenar por frequência (mais sorteados primeiro)
+        sorted_by_freq = sorted(distribution.items(), key=lambda x: x[1], reverse=True)
+        
+        # Identificar os números mais frequentes (até 30, conforme solicitado)
+        # Pegar top N números mais frequentes (onde N pode ser até 30)
+        top_frequent_numbers = {}
+        max_freq_count = max(distribution.values()) if distribution.values() else 0
+        
+        # Considerar números com frequência significativa (pelo menos 10% da frequência máxima)
+        min_freq_threshold = max_freq_count * 0.1 if max_freq_count > 0 else 1
+        
+        for num, freq in sorted_by_freq:
+            if freq >= min_freq_threshold and num <= 30:  # Apenas números até 30
+                top_frequent_numbers[num] = freq
+        
+        # Analisar REGIÕES (faixas) com mais frequência
+        # Dividir em faixas: 1-10, 11-20, 21-30, 31-40, 41-50, 51-60
+        region_freq = {
+            '1-10': 0,
+            '11-20': 0,
+            '21-30': 0,
+            '31-40': 0,
+            '41-50': 0,
+            '51-60': 0
+        }
+        
+        for num, freq in distribution.items():
+            if 1 <= num <= 10:
+                region_freq['1-10'] += freq
+            elif 11 <= num <= 20:
+                region_freq['11-20'] += freq
+            elif 21 <= num <= 30:
+                region_freq['21-30'] += freq
+            elif 31 <= num <= 40:
+                region_freq['31-40'] += freq
+            elif 41 <= num <= 50:
+                region_freq['41-50'] += freq
+            elif 51 <= num <= 60:
+                region_freq['51-60'] += freq
+        
+        # Ordenar regiões por frequência (mais frequente primeiro)
+        sorted_regions = sorted(region_freq.items(), key=lambda x: x[1], reverse=True)
+        
+        # Encontrar região mais frequente
+        max_region_freq = max(region_freq.values()) if region_freq.values() else 1
+        top_region = sorted_regions[0][0] if sorted_regions else '1-10'
+        
+        # Log da análise de regiões (apenas se houver dados)
+        if max_region_freq > 0:
+            logger.info(
+                f"📊 Análise de regiões (primeira dezena): "
+                f"Top região: {top_region} ({max_region_freq} ocorrências), "
+                f"Ordem: {', '.join([f'{r[0]}({r[1]})' for r in sorted_regions[:3]])}"
+            )
+        
+        # Identificar números mais frequentes na região top (para referência)
+        top_region_range = []
+        if top_region == '1-10':
+            top_region_range = list(range(1, 11))
+        elif top_region == '11-20':
+            top_region_range = list(range(11, 21))
+        elif top_region == '21-30':
+            top_region_range = list(range(21, 31))
+        elif top_region == '31-40':
+            top_region_range = list(range(31, 41))
+        elif top_region == '41-50':
+            top_region_range = list(range(41, 51))
+        elif top_region == '51-60':
+            top_region_range = list(range(51, 61))
+        
+        # Log dos números mais frequentes na região top
+        top_nums_in_region = [num for num in top_region_range if num in top_frequent_numbers]
+        if top_nums_in_region:
+            # Ordenar por frequência dentro da região
+            top_nums_sorted = sorted(
+                [(num, distribution.get(num, 0)) for num in top_nums_in_region],
+                key=lambda x: x[1],
+                reverse=True
+            )[:10]
+            top_nums_str = ', '.join([f'{n[0]}({n[1]})' for n in top_nums_sorted])
+            logger.info(f"🎯 Números mais frequentes na região {top_region}: {top_nums_str}")
+        
+        # Determinar fator de relaxamento baseado no validation_level
+        # Quando há dificuldade, relaxa progressivamente a regra
+        # IMPORTANTE: Aplicar pesos MUITO mais fortes para garantir distribuição correta
+        from app.services.validation_level import ValidationLevel
+        if validation_level == ValidationLevel.STRICT or validation_level == ValidationLevel.NORMAL:
+            # STRICT/NORMAL: Aplicar regra completa com pesos MUITO fortes
+            # Para 10.000 jogos: ~800 com número top, ~80 com número 1
+            # Isso significa peso ~10x maior para números top
+            top_numbers_multiplier = 10.0  # Peso 10x maior para números mais frequentes
+            top_region_multiplier = 2.0  # Boost de 100% para região mais frequente
+            other_numbers_multiplier = 0.1  # Reduzir MUITO outros números (10% do normal)
+            min_weight_top = 0.3  # Peso mínimo maior para números frequentes
+            min_weight_others = 0.01  # Peso mínimo MUITO menor para outros
+        elif validation_level == ValidationLevel.RELAXED:
+            # RELAXED: Reduzir um pouco o peso, mas ainda forte
+            top_numbers_multiplier = 7.0  # Peso 7x maior
+            top_region_multiplier = 1.7  # Boost menor (70%)
+            other_numbers_multiplier = 0.2  # Aumentar um pouco outros números
+            min_weight_top = 0.2
+            min_weight_others = 0.02
+        elif validation_level == ValidationLevel.MINIMAL:
+            # MINIMAL: Relaxar bastante, permitir mais distribuição
+            top_numbers_multiplier = 4.0  # Peso 4x maior (ainda forte)
+            top_region_multiplier = 1.3  # Boost menor (30%)
+            other_numbers_multiplier = 0.4  # Aumentar outros números
+            min_weight_top = 0.15
+            min_weight_others = 0.05
+        else:
+            # Default: STRICT
+            top_numbers_multiplier = 10.0
+            top_region_multiplier = 2.0
+            other_numbers_multiplier = 0.1
+            min_weight_top = 0.3
+            min_weight_others = 0.01
+        
+        # Calcular frequência total e média
+        total_draws = len(self._data) if self._data is not None else 1
+        avg_freq = total_draws / 60  # Frequência média esperada
+        
+        # Gerar pesos baseados na análise DINÂMICA do histórico
+        weights = {}
+        for num in range(1, 61):
+            # Peso baseado na frequência REAL do histórico
+            freq_count = distribution.get(num, 0)
+            
+            # Determinar se está na região mais frequente
+            in_top_region = False
+            if top_region == '1-10' and 1 <= num <= 10:
+                in_top_region = True
+            elif top_region == '11-20' and 11 <= num <= 20:
+                in_top_region = True
+            elif top_region == '21-30' and 21 <= num <= 30:
+                in_top_region = True
+            elif top_region == '31-40' and 31 <= num <= 40:
+                in_top_region = True
+            elif top_region == '41-50' and 41 <= num <= 50:
+                in_top_region = True
+            elif top_region == '51-60' and 51 <= num <= 60:
+                in_top_region = True
+            
+            # Calcular peso base DIRETAMENTE da frequência relativa do histórico
+            # SEM multiplicadores arbitrários - usar APENAS a frequência histórica
+            if freq_count > 0:
+                # Peso = frequência relativa EXATA do histórico
+                # Se número 10 apareceu 345 vezes em 3000 sorteios, peso = 345/3000 = 0.115
+                freq_weight = freq_count / total_draws if total_draws > 0 else 0.01
+            else:
+                # Número nunca apareceu como primeira dezena: peso mínimo
+                freq_weight = 0.001  # 0.1% mínimo
+            
+            # NÃO aplicar multiplicadores, boosts ou ajustes arbitrários
+            # Usar APENAS a frequência histórica direta
+            weights[num] = freq_weight
+        
+        # Normalizar pesos
+        total_weight = sum(weights.values())
+        normalized_weights = {num: w / total_weight for num, w in weights.items()}
+        
+        # Log dos pesos para depuração (apenas top 10 e alguns específicos)
+        if max_freq_count > 0:
+            top_weights = sorted(normalized_weights.items(), key=lambda x: x[1], reverse=True)[:10]
+            top_weights_str = ', '.join([f'{n}({w:.4f})' for n, w in top_weights])
+            logger.info(f"⚖️ Top 10 pesos normalizados (primeira dezena): {top_weights_str}")
+            
+            # Log de números específicos mencionados pelo usuário
+            specific_nums = [1, 2, 10, 30, 31]
+            specific_weights = [(n, normalized_weights.get(n, 0)) for n in specific_nums]
+            specific_str = ', '.join([f'{n}({w:.4f})' for n, w in specific_weights])
+            logger.info(f"🎯 Pesos específicos: {specific_str}")
+        
+        return {
+            'distribution': distribution,
+            'most_frequent': max(distribution.items(), key=lambda x: x[1])[0] if distribution else 20,
+            'min_most_frequent': min_most_frequent,
+            'average': avg,
+            'weights': normalized_weights
+        }
+    
     def get_automatic_statistical_weights(self) -> Dict[int, float]:
         """
         Automatically calculate statistical weights based on historical analysis

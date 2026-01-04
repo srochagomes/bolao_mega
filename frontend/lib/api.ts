@@ -33,6 +33,8 @@ export interface JobInfo {
   created_at: string;
   updated_at: string;
   progress?: number;
+  games_generated?: number;  // Number of games generated so far
+  total_games?: number;      // Total number of games to generate
   error?: string;
   download_url?: string;
 }
@@ -137,6 +139,12 @@ export interface FileMetadata {
   quantity?: number;
   numbers_per_game?: number;
   total_games?: number;
+  // Multi-part file support
+  display_name?: string;
+  is_multi_part?: boolean;
+  is_multi_file?: boolean;
+  total_files?: number;
+  part_files?: string[];
 }
 
 export interface FileListResponse {

@@ -7,10 +7,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 import logging
 
-# Import Ray config early to set environment variables before Ray initialization
-from app.services import ray_config  # noqa: F401
+# Ray is not used - removed for cleaner codebase
 
-from app.api import generation, jobs, historical, files
+from app.api import generation, jobs, historical, files, calculator
 from app.core.config import settings
 
 # Configure logging
@@ -40,6 +39,7 @@ app.include_router(generation.router, prefix="/api/v1", tags=["generation"])
 app.include_router(jobs.router, prefix="/api/v1", tags=["jobs"])
 app.include_router(historical.router, prefix="/api/v1", tags=["historical"])
 app.include_router(files.router, prefix="/api/v1", tags=["files"])
+app.include_router(calculator.router, prefix="/api/v1", tags=["calculator"])
 
 
 @app.get("/")

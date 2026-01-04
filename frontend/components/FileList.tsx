@@ -156,10 +156,19 @@ export default function FileList() {
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
                   {data.files.map((file) => (
-                    <tr key={file.process_id} className="hover:bg-gray-50">
+                    <tr key={file.process_id || file.filename || Math.random()} className="hover:bg-gray-50">
                       <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="text-sm font-medium text-gray-900">{file.filename}</div>
-                        <div className="text-xs text-gray-500 font-mono">{file.process_id.substring(0, 8)}...</div>
+                        <div className="text-sm font-medium text-gray-900">
+                          {file.display_name || file.filename}
+                          {file.is_multi_part && file.total_files && (
+                            <span className="ml-2 px-2 py-1 text-xs bg-blue-100 text-blue-800 rounded-full">
+                              {file.total_files} arquivos
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-xs text-gray-500 font-mono">
+                          {file.process_id ? `${file.process_id.substring(0, 8)}...` : 'N/A'}
+                        </div>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
                         <div className="text-sm text-gray-900">{formatDate(file.created_at)}</div>
@@ -181,8 +190,9 @@ export default function FileList() {
                       <td className="px-4 py-4 whitespace-nowrap text-sm font-medium">
                         <div className="flex gap-3 justify-center items-center">
                           <button
-                            onClick={() => handleDownload(file.process_id)}
-                            className="text-blue-600 hover:text-blue-900 p-2 rounded-md hover:bg-blue-50 transition-colors relative group"
+                            onClick={() => file.process_id && handleDownload(file.process_id)}
+                            disabled={!file.process_id}
+                            className="text-blue-600 hover:text-blue-900 disabled:opacity-50 disabled:cursor-not-allowed p-2 rounded-md hover:bg-blue-50 transition-colors relative group"
                             title="Baixar Excel"
                           >
                             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
@@ -193,8 +203,9 @@ export default function FileList() {
                             </span>
                           </button>
                           <button
-                            onClick={() => handleDownloadPdf(file.process_id)}
-                            className="text-blue-600 hover:text-blue-900 p-2 rounded-md hover:bg-blue-50 transition-colors relative group"
+                            onClick={() => file.process_id && handleDownloadPdf(file.process_id)}
+                            disabled={!file.process_id}
+                            className="text-blue-600 hover:text-blue-900 disabled:opacity-50 disabled:cursor-not-allowed p-2 rounded-md hover:bg-blue-50 transition-colors relative group"
                             title="Gerar PDF"
                           >
                             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
@@ -206,9 +217,9 @@ export default function FileList() {
                             </span>
                           </button>
                           <button
-                            onClick={() => handleDelete(file.process_id, file.filename)}
-                            disabled={deleting === file.process_id}
-                            className="text-red-600 hover:text-red-900 disabled:opacity-50 p-2 rounded-md hover:bg-red-50 transition-colors relative group"
+                            onClick={() => file.process_id && handleDelete(file.process_id, file.filename)}
+                            disabled={!file.process_id || deleting === file.process_id}
+                            className="text-red-600 hover:text-red-900 disabled:opacity-50 disabled:cursor-not-allowed p-2 rounded-md hover:bg-red-50 transition-colors relative group"
                             title={deleting === file.process_id ? 'Excluindo...' : 'Excluir'}
                           >
                             {deleting === file.process_id ? (

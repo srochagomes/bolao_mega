@@ -17,7 +17,7 @@ class GameConstraints(BaseModel):
     """Game generation constraints"""
     numbers_per_game: int = Field(6, ge=6, le=17, description="Numbers per game (6-17)")
     min_repetition: Optional[int] = Field(None, ge=0, description="Minimum repetition across games")
-    max_repetition: Optional[int] = Field(None, ge=0, description="Maximum repetition across games")
+    max_repetition: Optional[int] = Field(default=2, ge=0, description="Maximum repetition across games (fixed at 2, adjusts automatically)")
     min_odd: Optional[int] = Field(None, ge=0, le=17, description="Minimum odd numbers per game")
     max_odd: Optional[int] = Field(None, ge=0, le=17, description="Maximum odd numbers per game")
     min_even: Optional[int] = Field(None, ge=0, le=17, description="Minimum even numbers per game")

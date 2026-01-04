@@ -21,9 +21,9 @@ class ValidationLevelManager:
     
     def __init__(
         self,
-        failure_threshold_strict: int = 5,  # Reduced for faster adaptation
-        failure_threshold_normal: int = 15,  # Reduced for faster adaptation
-        failure_threshold_relaxed: int = 30  # Reduced for faster adaptation
+        failure_threshold_strict: int = 3,  # Very fast adaptation - enter NORMAL after 3 failures
+        failure_threshold_normal: int = 8,  # Fast adaptation - enter RELAXED after 8 failures
+        failure_threshold_relaxed: int = 15  # Enter MINIMAL after 15 failures
     ):
         """
         Initialize validation level manager

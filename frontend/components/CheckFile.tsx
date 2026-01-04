@@ -13,15 +13,16 @@ interface CheckResult {
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
 export default function CheckFile() {
-  const [file, setFile] = useState<File | null>(null);
+  const [files, setFiles] = useState<File[]>([]);
   const [numbers, setNumbers] = useState<string[]>(['', '', '', '', '', '']);
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<CheckResult | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
-      setFile(e.target.files[0]);
+    if (e.target.files && e.target.files.length > 0) {
+      const selectedFiles = Array.from(e.target.files);
+      setFiles(selectedFiles);
       setResult(null);
       setError(null);
     }
@@ -38,9 +39,9 @@ export default function CheckFile() {
   };
 
   const handleCheck = async () => {
-    // Validate file
-    if (!file) {
-      setError('Por favor, selecione um arquivo Excel');
+    // Validate files
+    if (files.length === 0) {
+      setError('Por favor, selecione pelo menos um arquivo Excel');
       return;
     }
 
@@ -69,7 +70,10 @@ export default function CheckFile() {
 
     try {
       const formData = new FormData();
-      formData.append('file', file);
+      // Append all files (API accepts multiple files)
+      for (const file of files) {
+        formData.append('files', file);
+      }
       formData.append('numbers', numValues.join(','));
 
       const response = await fetch(`${API_BASE_URL}/api/v1/files/check`, {
@@ -100,7 +104,7 @@ export default function CheckFile() {
   };
 
   const handleReset = () => {
-    setFile(null);
+    setFiles([]);
     setNumbers(['', '', '', '', '', '']);
     setResult(null);
     setError(null);
@@ -114,11 +118,12 @@ export default function CheckFile() {
         {/* File Upload */}
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-2">
-            Selecione o arquivo Excel para conferir:
+            Selecione um ou mais arquivos Excel para conferir:
           </label>
           <input
             type="file"
             accept=".xlsx,.xls"
+            multiple
             onChange={handleFileChange}
             className="block w-full text-sm text-gray-500
               file:mr-4 file:py-2 file:px-4
@@ -128,10 +133,17 @@ export default function CheckFile() {
               hover:file:bg-blue-100
               cursor-pointer"
           />
-          {file && (
-            <p className="mt-2 text-sm text-gray-600">
-              Arquivo selecionado: <strong>{file.name}</strong>
-            </p>
+          {files.length > 0 && (
+            <div className="mt-2">
+              <p className="text-sm text-gray-600 mb-1">
+                <strong>{files.length}</strong> arquivo(s) selecionado(s):
+              </p>
+              <ul className="list-disc list-inside text-sm text-gray-600 space-y-1">
+                {files.map((file, index) => (
+                  <li key={index}>{file.name}</li>
+                ))}
+              </ul>
+            </div>
           )}
         </div>
 
@@ -194,7 +206,7 @@ export default function CheckFile() {
         <div className="flex gap-4">
           <button
             onClick={handleCheck}
-            disabled={loading || !file || numbers.some(n => !n.trim())}
+            disabled={loading || files.length === 0 || numbers.some(n => !n.trim())}
             className="flex-1 px-6 py-3 bg-blue-600 text-white rounded-md font-semibold
               hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2
               transition-colors disabled:opacity-50 disabled:cursor-not-allowed"

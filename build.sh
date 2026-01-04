@@ -26,19 +26,43 @@ fi
 echo "Activating virtual environment..."
 source venv/bin/activate
 
+# Verify virtual environment is activated
+if [ -z "$VIRTUAL_ENV" ]; then
+    echo "ERROR: Virtual environment not activated!"
+    exit 1
+fi
+
 echo "Installing Python dependencies..."
 pip install --upgrade pip
 pip install -r requirements.txt
 
+# Verify pip installed packages correctly
+if [ $? -ne 0 ]; then
+    echo "ERROR: Failed to install dependencies from requirements.txt!"
+    exit 1
+fi
+
 # Verify critical dependencies
 echo "Verifying critical dependencies..."
-python3 -c "import reportlab; print('reportlab installed successfully')" || {
-    echo "ERROR: reportlab installation failed!"
-    exit 1
-}
-python3 -c "import openpyxl; print('openpyxl installed successfully')" || {
+if python3 -c "import openpyxl; print('✅ openpyxl installed successfully')" 2>/dev/null; then
+    echo "✅ openpyxl installed successfully"
+else
     echo "ERROR: openpyxl installation failed!"
-    exit 1
+    echo "Attempting to reinstall openpyxl..."
+    pip install --upgrade openpyxl || {
+        echo "ERROR: Failed to install openpyxl!"
+        exit 1
+    }
+    # Verify again
+    python3 -c "import openpyxl; print('✅ openpyxl installed successfully')" || {
+        echo "ERROR: openpyxl still not working after reinstall!"
+        exit 1
+    }
+fi
+
+echo -n "Checking ray (optional, for parallel Excel generation)... "
+python3 -c "import ray; print('✅ ray installed successfully')" || {
+    echo "⚠️  ray not installed (optional - parallel Excel generation will use sequential mode)"
 }
 
 echo -e "${GREEN}Backend dependencies installed successfully${NC}"
@@ -60,4 +84,5 @@ cd ..
 echo -e "\n${GREEN}========================================="
 echo "Build completed successfully!"
 echo "=========================================${NC}"
+
 
